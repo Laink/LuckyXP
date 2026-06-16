@@ -1,0 +1,8 @@
+{
+  "block.luckyxp.vending_machine_common": "Vending Machine (Common)",
+  "block.luckyxp.vending_machine_rare": "Vending Machine (Rare)",
+  "block.luckyxp.vending_machine_epic": "Vending Machine (Epic)",
+  "block.luckyxp.vending_machine_legendary": "Vending Machine (Legendary)",
+  "itemGroup.luckyxp": "Lucky XP",
+  "container.luckyxp.vending_machine": "Vending Machine"
+}

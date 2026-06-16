@@ -1,0 +1,42 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="${mod_authors}"
+description='''${mod_description}'''
+
+# Forge (mandatory)
+[[dependencies.${mod_id}]]
+    modId="forge"
+    mandatory=true
+    versionRange="${forge_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+# Minecraft (mandatory)
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+# Lucky Block (base mod the XP economy is built around)
+[[dependencies.${mod_id}]]
+    modId="lucky"
+    mandatory=true
+    versionRange="[1.20.1-13.0,)"
+    ordering="AFTER"
+    side="BOTH"
+
+# Lucky Tweaks (provides the lucky-block-broken event Lucky XP listens to + the luck fix)
+[[dependencies.${mod_id}]]
+    modId="luckytweaks"
+    mandatory=true
+    versionRange="[1.0.2,)"
+    ordering="AFTER"
+    side="BOTH"
