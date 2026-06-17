@@ -1,0 +1,6 @@
+{
+  "parent": "luckyxp:block/vending_machine_upper_base",
+  "textures": {
+    "screen": "luckyxp:block/screen_ores"
+  }
+}

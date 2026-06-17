@@ -1,7 +1,7 @@
 package com.lwi.luckyxp;
 
 import com.lwi.luckytweaks.api.LuckyTweaksApi;
-import com.lwi.luckyxp.machine.Rarity;
+import com.lwi.luckyxp.machine.MachineType;
 import com.lwi.luckyxp.machine.VendingMachineBlock;
 import com.lwi.luckyxp.machine.VendingMachineBlockEntity;
 import com.lwi.luckyxp.machine.VendingMachineMenu;
@@ -40,25 +40,26 @@ public final class Registration {
     public static final DeferredRegister<EntityType<?>> ENTITIES = DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, LuckyXpMod.MODID);
     public static final DeferredRegister<CreativeModeTab> TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, LuckyXpMod.MODID);
 
-    public static final Map<Rarity, RegistryObject<Block>> MACHINES = new EnumMap<>(Rarity.class);
-    public static final Map<Rarity, RegistryObject<Item>> MACHINE_ITEMS = new EnumMap<>(Rarity.class);
+    /** One vending-machine block per type (the block IS the type; rarity lives on the entity/stand). */
+    public static final Map<MachineType, RegistryObject<Block>> MACHINES = new EnumMap<>(MachineType.class);
+    public static final Map<MachineType, RegistryObject<Item>> MACHINE_ITEMS = new EnumMap<>(MachineType.class);
 
     static {
-        for (Rarity r : Rarity.values()) {
-            String name = "vending_machine_" + r.id;
+        for (MachineType t : MachineType.values()) {
+            String name = "vending_machine_" + t.id;
             RegistryObject<Block> block = BLOCKS.register(name,
                     () -> new VendingMachineBlock(BlockBehaviour.Properties.of()
-                            .mapColor(MapColor.METAL).strength(3.5F).requiresCorrectToolForDrops(), r));
-            MACHINES.put(r, block);
-            MACHINE_ITEMS.put(r, ITEMS.register(name, () -> new BlockItem(block.get(), new Item.Properties())));
+                            .mapColor(MapColor.METAL).strength(3.5F).requiresCorrectToolForDrops().noOcclusion(), t));
+            MACHINES.put(t, block);
+            MACHINE_ITEMS.put(t, ITEMS.register(name, () -> new BlockItem(block.get(), new Item.Properties())));
         }
     }
 
     public static final RegistryObject<BlockEntityType<VendingMachineBlockEntity>> VENDING_MACHINE_BE =
             BLOCK_ENTITIES.register("vending_machine", () -> BlockEntityType.Builder.of(
                     VendingMachineBlockEntity::new,
-                    MACHINES.get(Rarity.COMMON).get(), MACHINES.get(Rarity.RARE).get(),
-                    MACHINES.get(Rarity.EPIC).get(), MACHINES.get(Rarity.LEGENDARY).get()
+                    MACHINES.get(MachineType.POTIONS).get(), MACHINES.get(MachineType.INFUSED_LB).get(),
+                    MACHINES.get(MachineType.ORES).get()
             ).build(null));
 
     public static final RegistryObject<MenuType<VendingMachineMenu>> VENDING_MACHINE_MENU =
@@ -70,10 +71,10 @@ public final class Registration {
 
     public static final RegistryObject<CreativeModeTab> TAB = TABS.register("luckyxp", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.luckyxp"))
-            .icon(() -> new ItemStack(MACHINE_ITEMS.get(Rarity.LEGENDARY).get()))
+            .icon(() -> new ItemStack(MACHINE_ITEMS.get(MachineType.INFUSED_LB).get()))
             .displayItems((params, output) -> {
-                for (Rarity r : Rarity.values()) {
-                    output.accept(MACHINE_ITEMS.get(r).get());
+                for (MachineType t : MachineType.values()) {
+                    output.accept(MACHINE_ITEMS.get(t).get());
                 }
             })
             .build());

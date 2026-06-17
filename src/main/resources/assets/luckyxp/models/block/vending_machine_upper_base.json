@@ -1,0 +1,42 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "luckyxp:block/machine_body",
+    "body": "luckyxp:block/machine_body",
+    "front": "luckyxp:block/machine_front_upper",
+    "top": "luckyxp:block/machine_top",
+    "led": "luckyxp:block/led"
+  },
+  "elements": [
+    {
+      "from": [0, 0, 1],
+      "to": [16, 16, 15],
+      "faces": {
+        "north": {"uv": [0, 0, 16, 16], "texture": "#front"},
+        "south": {"uv": [0, 0, 16, 16], "texture": "#body"},
+        "east":  {"uv": [0, 0, 16, 16], "texture": "#body"},
+        "west":  {"uv": [0, 0, 16, 16], "texture": "#body"},
+        "up":    {"uv": [0, 0, 16, 16], "texture": "#top"},
+        "down":  {"uv": [0, 0, 16, 16], "texture": "#body"}
+      }
+    },
+    {
+      "from": [2.5, 2.5, 0.99],
+      "to": [13, 13, 1],
+      "faces": {
+        "north": {"uv": [0, 0, 16, 16], "texture": "#screen"},
+        "east":  {"uv": [0, 0, 2, 16],  "texture": "#body"},
+        "west":  {"uv": [0, 0, 2, 16],  "texture": "#body"},
+        "up":    {"uv": [0, 0, 16, 2],  "texture": "#body"},
+        "down":  {"uv": [0, 0, 16, 2],  "texture": "#body"}
+      }
+    },
+    {
+      "from": [3.5, 3.5, 0.97],
+      "to": [4.5, 4.5, 0.99],
+      "faces": {
+        "north": {"uv": [0, 0, 16, 16], "texture": "#led", "tintindex": 0}
+      }
+    }
+  ]
+}

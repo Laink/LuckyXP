@@ -1,8 +1,7 @@
 {
-  "block.luckyxp.vending_machine_common": "Vending Machine (Common)",
-  "block.luckyxp.vending_machine_rare": "Vending Machine (Rare)",
-  "block.luckyxp.vending_machine_epic": "Vending Machine (Epic)",
-  "block.luckyxp.vending_machine_legendary": "Vending Machine (Legendary)",
+  "block.luckyxp.vending_machine_potions": "Potion Vending Machine",
+  "block.luckyxp.vending_machine_infused_lb": "Infused Lucky Block Vending Machine",
+  "block.luckyxp.vending_machine_ores": "Ore Vending Machine",
   "itemGroup.luckyxp": "Lucky XP",
   "container.luckyxp.vending_machine": "Vending Machine"
 }

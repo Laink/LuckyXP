@@ -1,0 +1,12 @@
+{
+  "variants": {
+    "half=lower,facing=north": {"model": "luckyxp:block/vending_machine_lower"},
+    "half=lower,facing=east":  {"model": "luckyxp:block/vending_machine_lower", "y": 90},
+    "half=lower,facing=south": {"model": "luckyxp:block/vending_machine_lower", "y": 180},
+    "half=lower,facing=west":  {"model": "luckyxp:block/vending_machine_lower", "y": 270},
+    "half=upper,facing=north": {"model": "luckyxp:block/vending_machine_upper_infused_lb"},
+    "half=upper,facing=east":  {"model": "luckyxp:block/vending_machine_upper_infused_lb", "y": 90},
+    "half=upper,facing=south": {"model": "luckyxp:block/vending_machine_upper_infused_lb", "y": 180},
+    "half=upper,facing=west":  {"model": "luckyxp:block/vending_machine_upper_infused_lb", "y": 270}
+  }
+}

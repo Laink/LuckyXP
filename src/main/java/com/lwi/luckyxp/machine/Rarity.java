@@ -26,6 +26,16 @@ public enum Rarity {
         return c == null ? 0xFFFFFFFF : 0xFF000000 | c;
     }
 
+    /** Vivid RGB used for the rarity pill: the GUI badge AND the external screen LED (shared so they match). */
+    public int pillColor() {
+        return switch (this) {
+            case COMMON -> 0x5CF08A;     // green
+            case RARE -> 0x4FA8FF;       // azure
+            case EPIC -> 0xC264FF;       // purple
+            case LEGENDARY -> 0xFFE21C;  // bright yellow-gold (pétant)
+        };
+    }
+
     /** Roll a rarity by weight (used by worldgen to pick which machine to place). */
     public static Rarity roll(RandomSource rng) {
         int total = 0;

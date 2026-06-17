@@ -14,16 +14,19 @@ import net.minecraft.world.item.ItemStack;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Slot-less container menu: a list of articles bought with Lucky levels via menu-button clicks. */
+/** Slot-less container menu: a list of articles bought with Lucky levels via menu-button clicks.
+ *  Carries the machine's {@link MachineType} (drives the CRT screen icon) and {@link Rarity}. */
 public class VendingMachineMenu extends AbstractContainerMenu {
     private final List<Article> stock;
     private final ContainerLevelAccess access;
+    private final MachineType type;
     private final Rarity rarity;
 
     /** Server side: built from the block entity. */
-    public VendingMachineMenu(int id, Inventory inv, List<Article> stock, BlockPos pos, Rarity rarity) {
+    public VendingMachineMenu(int id, Inventory inv, List<Article> stock, BlockPos pos, MachineType type, Rarity rarity) {
         super(Registration.VENDING_MACHINE_MENU.get(), id);
         this.stock = stock;
+        this.type = type;
         this.rarity = rarity;
         this.access = ContainerLevelAccess.create(inv.player.level(), pos);
     }
@@ -32,6 +35,7 @@ public class VendingMachineMenu extends AbstractContainerMenu {
     public VendingMachineMenu(int id, Inventory inv, FriendlyByteBuf buf) {
         super(Registration.VENDING_MACHINE_MENU.get(), id);
         this.access = ContainerLevelAccess.NULL;
+        this.type = buf.readEnum(MachineType.class);
         this.rarity = buf.readEnum(Rarity.class);
         int count = buf.readVarInt();
         List<Article> list = new ArrayList<>();
@@ -45,11 +49,16 @@ public class VendingMachineMenu extends AbstractContainerMenu {
         return stock;
     }
 
+    public MachineType getMachineType() {
+        return type;
+    }
+
     public Rarity getRarity() {
         return rarity;
     }
 
-    public static void writeOpenData(FriendlyByteBuf buf, List<Article> stock, Rarity rarity) {
+    public static void writeOpenData(FriendlyByteBuf buf, List<Article> stock, MachineType type, Rarity rarity) {
+        buf.writeEnum(type);
         buf.writeEnum(rarity);
         buf.writeVarInt(stock.size());
         for (Article a : stock) {

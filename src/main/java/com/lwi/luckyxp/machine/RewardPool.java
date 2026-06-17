@@ -10,40 +10,26 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Rolls a vending machine's stock from the reward pool, gated by rarity.
+ * Rolls a vending machine's stock from the reward pool, by {@link MachineType} (the category sold) and
+ * {@link Rarity} (quality / level cost). Items are looked up by registry id at roll time and skipped if
+ * absent, so this never hard-depends on addon/luckytools items.
  *
- * <p>MVP pool (placeholders + a few real rewards): every machine offers exactly one infused Lucky
- * Block (Luck + cost scale with rarity), plus a couple of goodies; legendary machines also offer a
- * lucky tool. Items are looked up by registry id at roll time and skipped if absent, so this never
- * hard-depends on addon/luckytools items. TODO: real pool (Yakurum/Pink infused potions, skip
- * invasion, heal, repair, ender eyes, double-XP buff) + balanced level costs, moved to config.
+ * <p>Placeholder economy for now — real balance (exact rolls, level costs, infused potions from
+ * Yakurum/Pink, skip-invasion, heal/repair, double-XP buff) is deferred to config. Keep the per-type
+ * structure; only the contents/costs will change.
  */
 public final class RewardPool {
     private RewardPool() {}
 
-    public static List<Article> roll(Rarity rarity, RandomSource rng) {
+    public static List<Article> roll(MachineType type, Rarity rarity, RandomSource rng) {
         List<Article> out = new ArrayList<>();
-
-        // Exactly one infused Lucky Block per machine.
-        int luck;
-        int lbCost;
-        switch (rarity) {
-            case RARE -> { luck = 50; lbCost = 10; }
-            case EPIC -> { luck = 75; lbCost = 18; }
-            case LEGENDARY -> { luck = 100; lbCost = 30; }
-            default -> { luck = 25; lbCost = 5; }
+        int tier = rarity.ordinal(); // 0 common .. 3 legendary
+        switch (type) {
+            case POTIONS -> rollPotions(out, tier);
+            case INFUSED_LB -> rollInfusedLb(out, rarity);
+            case ORES -> rollOres(out, tier);
         }
-        ItemStack lb = infusedLuckyBlock(luck);
-        if (!lb.isEmpty()) {
-            out.add(new Article(lb, lbCost));
-        }
-
-        // Placeholder "other" goodies until the real pool (potions, etc.) is wired.
-        int tier = rarity.ordinal();
-        addIfPresent(out, "minecraft:ender_eye", 2 + tier * 2, 2 + tier);
-        addIfPresent(out, "minecraft:golden_apple", 1 + tier, 3 + tier * 3);
-
-        // Legendary-exclusive: a lucky tool.
+        // Legendary machines always also offer a lucky tool, whatever the type.
         if (rarity == Rarity.LEGENDARY) {
             ItemStack tool = luckyTool(rng);
             if (!tool.isEmpty()) {
@@ -53,11 +39,81 @@ public final class RewardPool {
         return out;
     }
 
-    private static void addIfPresent(List<Article> out, String id, int count, int cost) {
+    private static void rollPotions(List<Article> out, int tier) {
+        addPotion(out, "minecraft:strong_healing", 3 + tier);
+        addPotion(out, "minecraft:long_regeneration", 5 + tier * 2);
+        if (tier >= 1) {
+            addPotion(out, "minecraft:strong_strength", 5 + tier);
+        }
+        if (tier >= 2) {
+            addItem(out, "minecraft:golden_apple", 1 + tier, 4 + tier * 2);
+        }
+        if (tier >= 3) {
+            addItem(out, "minecraft:enchanted_golden_apple", 1, 30);
+        }
+    }
+
+    private static void rollInfusedLb(List<Article> out, Rarity rarity) {
+        int luck;
+        int cost;
+        switch (rarity) {
+            case RARE -> { luck = 50; cost = 10; }
+            case EPIC -> { luck = 75; cost = 18; }
+            case LEGENDARY -> { luck = 100; cost = 30; }
+            default -> { luck = 25; cost = 5; }
+        }
+        ItemStack lb = infusedLuckyBlock(luck);
+        if (!lb.isEmpty()) {
+            out.add(new Article(lb, cost));
+        }
+        // A cheaper lower-luck block too, so common machines aren't a single line.
+        if (rarity != Rarity.COMMON) {
+            ItemStack low = infusedLuckyBlock(25);
+            if (!low.isEmpty()) {
+                out.add(new Article(low, 5));
+            }
+        }
+    }
+
+    private static void rollOres(List<Article> out, int tier) {
+        switch (tier) {
+            case 0 -> {
+                addItem(out, "minecraft:iron_ingot", 4, 3);
+                addItem(out, "minecraft:copper_ingot", 8, 2);
+            }
+            case 1 -> {
+                addItem(out, "minecraft:gold_ingot", 4, 5);
+                addItem(out, "minecraft:redstone", 16, 3);
+                addItem(out, "minecraft:iron_ingot", 8, 4);
+            }
+            case 2 -> {
+                addItem(out, "minecraft:diamond", 2, 10);
+                addItem(out, "minecraft:emerald", 4, 8);
+                addItem(out, "minecraft:gold_ingot", 8, 6);
+            }
+            default -> {
+                addItem(out, "minecraft:diamond", 4, 14);
+                addItem(out, "minecraft:netherite_scrap", 1, 25);
+                addItem(out, "minecraft:emerald", 8, 10);
+            }
+        }
+    }
+
+    private static void addItem(List<Article> out, String id, int count, int cost) {
         ItemStack s = stack(id, count);
         if (!s.isEmpty()) {
             out.add(new Article(s, cost));
         }
+    }
+
+    private static void addPotion(List<Article> out, String potionId, int cost) {
+        Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation("minecraft", "potion"));
+        if (item == null) {
+            return;
+        }
+        ItemStack s = new ItemStack(item);
+        s.getOrCreateTag().putString("Potion", potionId);
+        out.add(new Article(s, cost));
     }
 
     private static ItemStack infusedLuckyBlock(int luck) {
