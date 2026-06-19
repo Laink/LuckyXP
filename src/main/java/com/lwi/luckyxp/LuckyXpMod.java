@@ -1,7 +1,9 @@
 package com.lwi.luckyxp;
 
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
 /**
@@ -16,5 +18,6 @@ public class LuckyXpMod {
     public LuckyXpMod(FMLJavaModLoadingContext context) {
         IEventBus modEventBus = context.getModEventBus();
         Registration.init(modEventBus);
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, LuckyXpConfig.CLIENT_SPEC);
     }
 }
