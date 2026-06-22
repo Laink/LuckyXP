@@ -3,6 +3,7 @@ package com.lwi.luckyxp.event;
 import com.lwi.luckyxp.LuckyXpMod;
 import com.lwi.luckyxp.net.LuckyXpNetwork;
 import com.lwi.luckyxp.xp.LuckyXpData;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -23,6 +24,7 @@ public final class LuckyXpServerEvents {
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             LuckyXpNetwork.sync(player);
+            syncEvent(player);
         }
     }
 
@@ -30,6 +32,15 @@ public final class LuckyXpServerEvents {
     public static void onRespawn(PlayerEvent.PlayerRespawnEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             LuckyXpNetwork.sync(player);
+            syncEvent(player);
+        }
+    }
+
+    /** Push the current global Lucky XP event (if any) so the joining player's HUD timer is correct. */
+    private static void syncEvent(ServerPlayer player) {
+        MinecraftServer server = player.getServer();
+        if (server != null) {
+            LuckyXpNetwork.sendEvent(player, LuckyEventManager.get(server));
         }
     }
 }

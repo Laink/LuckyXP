@@ -33,10 +33,10 @@ description='''${mod_description}'''
     ordering="AFTER"
     side="BOTH"
 
-# Lucky Tweaks (provides the lucky-block-broken event Lucky XP listens to + the luck fix)
+# Lucky Tweaks (the lucky-block-broken event + addChance + the lucky-block roulette API Lucky XP uses)
 [[dependencies.${mod_id}]]
     modId="luckytweaks"
     mandatory=true
-    versionRange="[1.0.2,)"
+    versionRange="[1.0.4,)"
     ordering="AFTER"
     side="BOTH"

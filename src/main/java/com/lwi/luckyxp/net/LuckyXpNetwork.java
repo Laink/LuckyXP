@@ -1,8 +1,11 @@
 package com.lwi.luckyxp.net;
 
 import com.lwi.luckyxp.LuckyXpMod;
+import com.lwi.luckyxp.event.LuckyEvent;
+import com.lwi.luckyxp.event.LuckyEventManager;
 import com.lwi.luckyxp.xp.LuckyXpData;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkRegistry;
@@ -28,6 +31,11 @@ public final class LuckyXpNetwork {
                 .encoder(SyncXpPacket::encode)
                 .consumerMainThread(SyncXpPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(SyncEventPacket.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(SyncEventPacket::decode)
+                .encoder(SyncEventPacket::encode)
+                .consumerMainThread(SyncEventPacket::handle)
+                .add();
     }
 
     public static void sync(ServerPlayer player) {
@@ -39,5 +47,29 @@ public final class LuckyXpNetwork {
                 PacketDistributor.PLAYER.with(() -> player),
                 new SyncXpPacket(level, LuckyXpData.getInto(player), LuckyXpData.xpToNext(level), LuckyXpData.getTotal(player))
         );
+    }
+
+    /** A wire snapshot of the global event (or its absence). */
+    private static SyncEventPacket snapshot(LuckyEventManager mgr) {
+        LuckyEvent e = mgr.active();
+        if (e == null) {
+            return new SyncEventPacket(false, "", false, "", 0, 0, 0);
+        }
+        boolean hasBlock = e.blockId() != null;
+        return new SyncEventPacket(true, e.type().id, hasBlock,
+                hasBlock ? e.blockId().toString() : "", e.magnitude(), mgr.ticksRemaining(), mgr.totalTicks());
+    }
+
+    /** Push the current global event state to every connected client (start/stop/periodic resync). */
+    public static void broadcastEvent(MinecraftServer server, LuckyEventManager mgr) {
+        CHANNEL.send(PacketDistributor.ALL.noArg(), snapshot(mgr));
+    }
+
+    /** Send the current global event state to one player (e.g. on login, so they see an ongoing event). */
+    public static void sendEvent(ServerPlayer player, LuckyEventManager mgr) {
+        if (player.connection == null) {
+            return;
+        }
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), snapshot(mgr));
     }
 }
