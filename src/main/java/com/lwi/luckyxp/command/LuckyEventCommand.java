@@ -2,10 +2,14 @@ package com.lwi.luckyxp.command;
 
 import com.lwi.luckytweaks.api.LuckyTweaksApi;
 import com.lwi.luckyxp.LuckyXpMod;
+import com.lwi.luckyxp.event.LuckyBlockShower;
 import com.lwi.luckyxp.event.LuckyEvent;
+import com.lwi.luckyxp.event.LuckyEvent.Scope;
 import com.lwi.luckyxp.event.LuckyEventManager;
 import com.lwi.luckyxp.event.LuckyEventType;
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -17,6 +21,7 @@ import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.RandomSource;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -25,26 +30,21 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 /**
- * DEV/TEST command {@code /luckyevent} (op 2): start, stop or inspect the single global Lucky XP event,
- * bypassing the day/night auto-trigger (added in a later tranche). {@code all} = mega jackpot (every
- * lucky block). Default durations mirror the design: 6 min for a single-block event, 4 min for a jackpot.
+ * DEV/TEST command {@code /luckyevent} (op 2) for the design-v4 events (block apparition). Decides an
+ * outcome up front (roll 1 = scope, roll 2 = value), plays the reveal, then the blocks appear.
  *
  * <ul>
- *   <li>{@code /luckyevent start} — random type, random block</li>
- *   <li>{@code /luckyevent start xp [all|<block>] [seconds] [multiplier]}</li>
- *   <li>{@code /luckyevent start luck [<amount> [all|<block>] [seconds]]}</li>
- *   <li>{@code /luckyevent stop} · {@code /luckyevent status}</li>
+ *   <li>{@code start} — fully random outcome (~5% RIEN, ~5% JACKPOT, else single ; value rolled)</li>
+ *   <li>{@code start xp [all|&lt;block&gt;] [mult]} · {@code start luck [all|&lt;block&gt;] [percent]}</li>
+ *   <li>{@code start nothing} · {@code preview [same args]} (roulette only, no blocks, no gate) · {@code stop} · {@code status}</li>
+ *   <li>{@code shower …} — spawn blocks directly (skip the roulette), to feel the apparition</li>
  * </ul>
  */
 @Mod.EventBusSubscriber(modid = LuckyXpMod.MODID)
 public final class LuckyEventCommand {
-    private static final int NORMAL_TICKS = 6 * 60 * 20;   // 6 min (single-block event)
-    private static final int JACKPOT_TICKS = 4 * 60 * 20;  // 4 min (mega jackpot)
-    private static final int DEFAULT_XP_MULTIPLIER = 2;
-    private static final int[] LUCK_TIERS = {10, 30, 50, 70, 90, 100};
-    private static final int MAX_SECONDS = 24 * 60 * 60;
+    private static final int REVEAL_TICKS = 410;     // ~20.5s : 5s hype + 2 rolls, each with a read pause, + held result
+    private static final int JACKPOT_COUNT = 20;
 
-    /** Tab-completes the {@code <block>} argument with the registered lucky block ids. */
     private static final SuggestionProvider<CommandSourceStack> LUCKY_BLOCKS = (ctx, builder) ->
             SharedSuggestionProvider.suggest(
                     LuckyTweaksApi.getLuckyBlockIds().stream().map(ResourceLocation::toString), builder);
@@ -57,107 +57,163 @@ public final class LuckyEventCommand {
                 .requires(src -> src.hasPermission(2))
                 .then(Commands.literal("stop").executes(ctx -> stop(ctx.getSource())))
                 .then(Commands.literal("status").executes(ctx -> status(ctx.getSource())))
-                .then(Commands.literal("start")
-                        .executes(ctx -> startRandom(ctx.getSource()))
-                        // --- start xp [all|<block>] [seconds] [multiplier] ---
-                        .then(Commands.literal("xp")
-                                .executes(ctx -> startRandomBlock(ctx.getSource(), LuckyEventType.DOUBLE_XP, DEFAULT_XP_MULTIPLIER, 0))
-                                .then(Commands.literal("all")
-                                        .executes(ctx -> start(ctx.getSource(), LuckyEventType.DOUBLE_XP, null, DEFAULT_XP_MULTIPLIER, 0))
-                                        .then(Commands.argument("seconds", IntegerArgumentType.integer(1, MAX_SECONDS))
-                                                .executes(ctx -> start(ctx.getSource(), LuckyEventType.DOUBLE_XP, null, DEFAULT_XP_MULTIPLIER, secs(ctx)))
-                                                .then(Commands.argument("multiplier", IntegerArgumentType.integer(1, 100))
-                                                        .executes(ctx -> start(ctx.getSource(), LuckyEventType.DOUBLE_XP, null, mult(ctx), secs(ctx))))))
-                                .then(Commands.argument("block", ResourceLocationArgument.id()).suggests(LUCKY_BLOCKS)
-                                        .executes(ctx -> startXpBlock(ctx, DEFAULT_XP_MULTIPLIER, 0))
-                                        .then(Commands.argument("seconds", IntegerArgumentType.integer(1, MAX_SECONDS))
-                                                .executes(ctx -> startXpBlock(ctx, DEFAULT_XP_MULTIPLIER, secs(ctx)))
-                                                .then(Commands.argument("multiplier", IntegerArgumentType.integer(1, 100))
-                                                        .executes(ctx -> startXpBlock(ctx, mult(ctx), secs(ctx)))))))
-                        // --- start luck [<amount> [all|<block>] [seconds]] ---
+                .then(outcomeArgs(Commands.literal("start"), false))     // real event (shower + End/dragon gate)
+                .then(outcomeArgs(Commands.literal("preview"), true))    // roulette only, no effect, no gate
+                // --- shower : test direct de l'apparition (saute la roulette) ---
+                .then(Commands.literal("shower")
                         .then(Commands.literal("luck")
-                                .executes(ctx -> startRandomBlock(ctx.getSource(), LuckyEventType.LUCK, randomLuckTier(ctx.getSource()), 0))
-                                .then(Commands.argument("amount", IntegerArgumentType.integer(0, 100))
-                                        .executes(ctx -> startRandomBlock(ctx.getSource(), LuckyEventType.LUCK, amount(ctx), 0))
-                                        .then(Commands.literal("all")
-                                                .executes(ctx -> start(ctx.getSource(), LuckyEventType.LUCK, null, amount(ctx), 0))
-                                                .then(Commands.argument("seconds", IntegerArgumentType.integer(1, MAX_SECONDS))
-                                                        .executes(ctx -> start(ctx.getSource(), LuckyEventType.LUCK, null, amount(ctx), secs(ctx)))))
-                                        .then(Commands.argument("block", ResourceLocationArgument.id()).suggests(LUCKY_BLOCKS)
-                                                .executes(ctx -> startLuckBlock(ctx, 0))
-                                                .then(Commands.argument("seconds", IntegerArgumentType.integer(1, MAX_SECONDS))
-                                                        .executes(ctx -> startLuckBlock(ctx, secs(ctx)))))))));
+                                .then(Commands.literal("all")
+                                        .then(Commands.argument("amount", IntegerArgumentType.integer(0, 100))
+                                                .executes(ctx -> showerLuck(ctx.getSource(), null, intArg(ctx, "amount"), -1))
+                                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
+                                                        .executes(ctx -> showerLuck(ctx.getSource(), null, intArg(ctx, "amount"), intArg(ctx, "count"))))))
+                                .then(Commands.argument("block", ResourceLocationArgument.id()).suggests(LUCKY_BLOCKS)
+                                        .then(Commands.argument("amount", IntegerArgumentType.integer(0, 100))
+                                                .executes(ctx -> showerLuckBlock(ctx, -1))
+                                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
+                                                        .executes(ctx -> showerLuckBlock(ctx, intArg(ctx, "count")))))))
+                        .then(Commands.literal("xp")
+                                .then(Commands.literal("all")
+                                        .then(Commands.argument("mult", DoubleArgumentType.doubleArg(1.0, 10.0))
+                                                .executes(ctx -> showerXp(ctx.getSource(), null, dbl(ctx), -1))
+                                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
+                                                        .executes(ctx -> showerXp(ctx.getSource(), null, dbl(ctx), intArg(ctx, "count"))))))
+                                .then(Commands.argument("block", ResourceLocationArgument.id()).suggests(LUCKY_BLOCKS)
+                                        .then(Commands.argument("mult", DoubleArgumentType.doubleArg(1.0, 10.0))
+                                                .executes(ctx -> showerXpBlock(ctx, -1))
+                                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
+                                                        .executes(ctx -> showerXpBlock(ctx, intArg(ctx, "count")))))))));
     }
 
-    // ---- argument shorthands ----
-    private static int secs(CommandContext<CommandSourceStack> ctx) {
-        return IntegerArgumentType.getInteger(ctx, "seconds");
+    /** The shared outcome argument tree ({@code [nothing | xp … | luck …]}), attached to both {@code start}
+     *  (preview=false: real event) and {@code preview} (preview=true: roulette only, no blocks, no gate). */
+    private static LiteralArgumentBuilder<CommandSourceStack> outcomeArgs(LiteralArgumentBuilder<CommandSourceStack> node, boolean pv) {
+        return node
+                .executes(ctx -> startRandom(ctx.getSource(), pv))
+                .then(Commands.literal("nothing").executes(ctx -> startNothing(ctx.getSource(), pv)))
+                .then(Commands.literal("xp")
+                        .then(Commands.literal("all")
+                                .executes(ctx -> startXp(ctx.getSource(), Scope.JACKPOT, null, -1.0, pv))
+                                .then(Commands.argument("mult", DoubleArgumentType.doubleArg(1.0, 10.0))
+                                        .executes(ctx -> startXp(ctx.getSource(), Scope.JACKPOT, null, dbl(ctx), pv))))
+                        .then(Commands.argument("block", ResourceLocationArgument.id()).suggests(LUCKY_BLOCKS)
+                                .executes(ctx -> startXpBlock(ctx, -1.0, pv))
+                                .then(Commands.argument("mult", DoubleArgumentType.doubleArg(1.0, 10.0))
+                                        .executes(ctx -> startXpBlock(ctx, dbl(ctx), pv)))))
+                .then(Commands.literal("luck")
+                        .then(Commands.literal("all")
+                                .executes(ctx -> startLuck(ctx.getSource(), Scope.JACKPOT, null, -1, pv))
+                                .then(Commands.argument("percent", IntegerArgumentType.integer(0, 100))
+                                        .executes(ctx -> startLuck(ctx.getSource(), Scope.JACKPOT, null, intArg(ctx, "percent"), pv))))
+                        .then(Commands.argument("block", ResourceLocationArgument.id()).suggests(LUCKY_BLOCKS)
+                                .executes(ctx -> startLuckBlock(ctx, -1, pv))
+                                .then(Commands.argument("percent", IntegerArgumentType.integer(0, 100))
+                                        .executes(ctx -> startLuckBlock(ctx, intArg(ctx, "percent"), pv)))));
     }
 
-    private static int mult(CommandContext<CommandSourceStack> ctx) {
-        return IntegerArgumentType.getInteger(ctx, "multiplier");
+    // ---- arg helpers ----
+    private static int intArg(CommandContext<CommandSourceStack> ctx, String name) {
+        return IntegerArgumentType.getInteger(ctx, name);
     }
 
-    private static int amount(CommandContext<CommandSourceStack> ctx) {
-        return IntegerArgumentType.getInteger(ctx, "amount");
+    private static double dbl(CommandContext<CommandSourceStack> ctx) {
+        return DoubleArgumentType.getDouble(ctx, "mult");
     }
 
-    // ---- block-targeted starts (validate the id is a real lucky block) ----
-    private static int startXpBlock(CommandContext<CommandSourceStack> ctx, int multiplier, int seconds) {
-        ResourceLocation block = ResourceLocationArgument.getId(ctx, "block");
-        if (!validateBlock(ctx.getSource(), block)) {
-            return 0;
-        }
-        return start(ctx.getSource(), LuckyEventType.DOUBLE_XP, block, multiplier, seconds);
+    // ---- value / count rolls ----
+    private static float rollXpMult(RandomSource rng) {
+        int r = rng.nextInt(100);
+        return r < 30 ? 1.5F : (r < 90 ? 2.0F : 4.0F);          // 30% / 60% / 10%
     }
 
-    private static int startLuckBlock(CommandContext<CommandSourceStack> ctx, int seconds) {
-        ResourceLocation block = ResourceLocationArgument.getId(ctx, "block");
-        if (!validateBlock(ctx.getSource(), block)) {
-            return 0;
-        }
-        return start(ctx.getSource(), LuckyEventType.LUCK, block, amount(ctx), seconds);
+    private static int rollLuckPercent(RandomSource rng) {
+        int r = rng.nextInt(100);
+        if (r < 20) return 10;
+        if (r < 45) return 30;
+        if (r < 65) return 50;
+        if (r < 80) return 70;
+        if (r < 90) return 90;
+        return 100;                                             // ~10% mega
     }
 
-    // ---- random helpers ----
-    private static int startRandom(CommandSourceStack src) {
-        boolean xp = src.getLevel().getRandom().nextBoolean();
+    private static int singleCount(RandomSource rng) {
+        return 5 + rng.nextInt(6);                              // 5-10 (hidden)
+    }
+
+    // ---- start (roulette) ----
+    private static int startRandom(CommandSourceStack src, boolean pv) {
+        RandomSource rng = src.getLevel().getRandom();
+        boolean xp = rng.nextBoolean();
         LuckyEventType type = xp ? LuckyEventType.DOUBLE_XP : LuckyEventType.LUCK;
-        int magnitude = xp ? DEFAULT_XP_MULTIPLIER : randomLuckTier(src);
-        return startRandomBlock(src, type, magnitude, 0);
+        int roll = rng.nextInt(100);
+        if (roll < 5) {
+            return startEvent(src, LuckyEvent.nothing(type), pv);
+        }
+        Scope scope = roll < 10 ? Scope.JACKPOT : Scope.SINGLE;
+        ResourceLocation block = scope == Scope.SINGLE ? randomBlock(src) : null;
+        if (scope == Scope.SINGLE && block == null) {
+            scope = Scope.JACKPOT;                              // no lucky block here -> jackpot
+        }
+        int count = scope == Scope.JACKPOT ? JACKPOT_COUNT : singleCount(rng);
+        LuckyEvent ev = xp ? LuckyEvent.xp(scope, block, rollXpMult(rng), count)
+                : LuckyEvent.luck(scope, block, rollLuckPercent(rng), count);
+        return startEvent(src, ev, pv);
     }
 
-    private static int startRandomBlock(CommandSourceStack src, LuckyEventType type, int magnitude, int seconds) {
-        ResourceLocation block = randomBlock(src);
-        if (block == null) {
-            src.sendFailure(Component.literal("No lucky blocks are registered."));
+    private static int startNothing(CommandSourceStack src, boolean pv) {
+        LuckyEventType type = src.getLevel().getRandom().nextBoolean() ? LuckyEventType.DOUBLE_XP : LuckyEventType.LUCK;
+        return startEvent(src, LuckyEvent.nothing(type), pv);
+    }
+
+    private static int startXp(CommandSourceStack src, Scope scope, @Nullable ResourceLocation block, double mult, boolean pv) {
+        RandomSource rng = src.getLevel().getRandom();
+        float m = mult > 0 ? (float) mult : rollXpMult(rng);
+        int count = scope == Scope.JACKPOT ? JACKPOT_COUNT : singleCount(rng);
+        return startEvent(src, LuckyEvent.xp(scope, block, m, count), pv);
+    }
+
+    private static int startLuck(CommandSourceStack src, Scope scope, @Nullable ResourceLocation block, int percent, boolean pv) {
+        RandomSource rng = src.getLevel().getRandom();
+        int p = percent >= 0 ? percent : rollLuckPercent(rng);
+        if (p <= 0) {
+            return startEvent(src, LuckyEvent.nothing(LuckyEventType.LUCK), pv);   // 0% = miss
+        }
+        int count = scope == Scope.JACKPOT ? JACKPOT_COUNT : singleCount(rng);
+        return startEvent(src, LuckyEvent.luck(scope, block, p, count), pv);
+    }
+
+    private static int startXpBlock(CommandContext<CommandSourceStack> ctx, double mult, boolean pv) {
+        ResourceLocation block = ResourceLocationArgument.getId(ctx, "block");
+        if (!validateBlock(ctx.getSource(), block)) {
             return 0;
         }
-        return start(src, type, block, magnitude, seconds);
+        return startXp(ctx.getSource(), Scope.SINGLE, block, mult, pv);
     }
 
-    @Nullable
-    private static ResourceLocation randomBlock(CommandSourceStack src) {
-        List<ResourceLocation> ids = LuckyTweaksApi.getLuckyBlockIds();
-        if (ids.isEmpty()) {
-            return null;
+    private static int startLuckBlock(CommandContext<CommandSourceStack> ctx, int percent, boolean pv) {
+        ResourceLocation block = ResourceLocationArgument.getId(ctx, "block");
+        if (!validateBlock(ctx.getSource(), block)) {
+            return 0;
         }
-        return ids.get(src.getLevel().getRandom().nextInt(ids.size()));
+        return startLuck(ctx.getSource(), Scope.SINGLE, block, percent, pv);
     }
 
-    private static int randomLuckTier(CommandSourceStack src) {
-        return LUCK_TIERS[src.getLevel().getRandom().nextInt(LUCK_TIERS.length)];
-    }
-
-    // ---- core ----
-    private static int start(CommandSourceStack src, LuckyEventType type, @Nullable ResourceLocation block,
-                             int magnitude, int seconds) {
+    private static int startEvent(CommandSourceStack src, LuckyEvent ev, boolean pv) {
         MinecraftServer server = src.getServer();
-        int ticks = seconds > 0 ? seconds * 20 : (block == null ? JACKPOT_TICKS : NORMAL_TICKS);
-        LuckyEvent ev = new LuckyEvent(type, block, magnitude);
-        LuckyEventManager.get(server).start(server, ev, ticks);
-        src.sendSuccess(() -> Component.literal("Lucky event started: " + describe(ev) + " (" + mmss(ticks) + ")")
-                .withStyle(type.color), true);
+        if (!pv) {
+            String blocked = LuckyEventManager.startBlockReason(server);
+            if (blocked != null) {
+                src.sendFailure(Component.literal("Cannot start a Lucky event: " + blocked + "."));
+                return 0;
+            }
+        }
+        long seed = src.getLevel().getRandom().nextLong();
+        LuckyEventManager.get(server).start(server, ev, REVEAL_TICKS, pv, seed);
+        if (pv) {
+            src.sendSuccess(() -> Component.literal("Preview (no effect): " + describe(ev)).withStyle(ChatFormatting.GRAY), false);
+        } else {
+            src.sendSuccess(() -> Component.literal("Lucky event: " + describe(ev)).withStyle(ev.type().color), true);
+        }
         return Command.SINGLE_SUCCESS;
     }
 
@@ -180,18 +236,66 @@ public final class LuckyEventCommand {
             src.sendSuccess(() -> Component.literal("No Lucky event is active.").withStyle(ChatFormatting.GRAY), false);
             return Command.SINGLE_SUCCESS;
         }
-        src.sendSuccess(() -> Component.literal(describe(ev) + " — " + mmss(mgr.ticksRemaining()) + " left")
-                .withStyle(ev.type().color), false);
+        src.sendSuccess(() -> Component.literal(describe(ev) + " — revealing...").withStyle(ev.type().color), false);
         return Command.SINGLE_SUCCESS;
     }
 
-    // ---- formatting ----
-    private static String describe(LuckyEvent ev) {
-        String target = ev.isJackpot() ? "ALL blocks (MEGA JACKPOT)" : ev.blockId().toString();
-        if (ev.type() == LuckyEventType.DOUBLE_XP) {
-            return "Double XP x" + ev.magnitude() + " on " + target;
+    // ---- shower (direct apparition test) ----
+    private static int showerCount(CommandSourceStack src, boolean jackpot, int explicit) {
+        if (explicit > 0) {
+            return explicit;
         }
-        return "Luck +" + ev.magnitude() + "% on " + target;
+        return jackpot ? JACKPOT_COUNT : singleCount(src.getLevel().getRandom());
+    }
+
+    private static int showerLuck(CommandSourceStack src, @Nullable ResourceLocation block, int amount, int explicit) {
+        int count = showerCount(src, block == null, explicit);
+        boolean mega = amount >= 100;
+        LuckyBlockShower.shower(src.getServer(), block, false, amount, 0.0F, count, mega);
+        String tgt = block == null ? count + " blocs varies" : count + " x " + block;
+        src.sendSuccess(() -> Component.literal("Shower LUCK +" + amount + "% : " + tgt + (mega ? "  [MEGA]" : ""))
+                .withStyle(ChatFormatting.GOLD), true);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int showerLuckBlock(CommandContext<CommandSourceStack> ctx, int explicit) {
+        ResourceLocation block = ResourceLocationArgument.getId(ctx, "block");
+        if (!validateBlock(ctx.getSource(), block)) {
+            return 0;
+        }
+        return showerLuck(ctx.getSource(), block, intArg(ctx, "amount"), explicit);
+    }
+
+    private static int showerXp(CommandSourceStack src, @Nullable ResourceLocation block, double mult, int explicit) {
+        int count = showerCount(src, block == null, explicit);
+        boolean mega = mult >= 4.0;
+        LuckyBlockShower.shower(src.getServer(), block, true, 0, (float) mult, count, mega);
+        String tgt = block == null ? count + " blocs varies" : count + " x " + block;
+        src.sendSuccess(() -> Component.literal("Shower XP x" + mult + " : " + tgt + (mega ? "  [MEGA]" : ""))
+                .withStyle(ChatFormatting.AQUA), true);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int showerXpBlock(CommandContext<CommandSourceStack> ctx, int explicit) {
+        ResourceLocation block = ResourceLocationArgument.getId(ctx, "block");
+        if (!validateBlock(ctx.getSource(), block)) {
+            return 0;
+        }
+        return showerXp(ctx.getSource(), block, dbl(ctx), explicit);
+    }
+
+    // ---- shared ----
+    @Nullable
+    private static ResourceLocation randomBlock(CommandSourceStack src) {
+        ResourceLocation dim = src.getLevel().dimension().location();
+        List<ResourceLocation> ids = LuckyTweaksApi.getLuckyBlockIds(dim);
+        if (ids.isEmpty()) {
+            ids = LuckyTweaksApi.getLuckyBlockIds();
+        }
+        if (ids.isEmpty()) {
+            return null;
+        }
+        return ids.get(src.getLevel().getRandom().nextInt(ids.size()));
     }
 
     private static boolean validateBlock(CommandSourceStack src, ResourceLocation block) {
@@ -202,10 +306,12 @@ public final class LuckyEventCommand {
         return true;
     }
 
-    private static String mmss(int ticks) {
-        int total = Math.max(0, ticks) / 20;
-        int m = total / 60;
-        int s = total % 60;
-        return m + ":" + (s < 10 ? "0" + s : s);
+    private static String describe(LuckyEvent ev) {
+        if (ev.isNothing()) {
+            return "RIEN (miss)";
+        }
+        String scope = ev.isJackpot() ? "TOUS (JACKPOT)" : String.valueOf(ev.blockId());
+        String val = ev.type() == LuckyEventType.DOUBLE_XP ? ("x" + ev.xpMult() + " XP") : ("+" + ev.luckPercent() + "%");
+        return val + " sur " + scope + (ev.isMega() ? "  [MEGA JACKPOT]" : "");
     }
 }

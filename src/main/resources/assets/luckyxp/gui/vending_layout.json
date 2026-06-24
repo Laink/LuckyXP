@@ -1,65 +1,65 @@
 {
   // =========================================================================
-  //  DISPOSITION DE L'INTERFACE — DISTRIBUTEUR LUCKY XP (valeurs par défaut)
-  //  Surchargeable via resource pack : édite, F3+T, puis RÉOUVRE la machine.
-  //  Unités = pixels GUI, origine = coin haut-gauche du panneau.
-  //  Couleurs = hex "AARRGGBB" (AA = opacité), entre guillemets.
-  //  Une clé absente garde sa valeur par défaut ; un fichier invalide = défauts.
+  //  UI LAYOUT — LUCKY XP VENDING MACHINE (default values)
+  //  Overridable via resource pack: edit, F3+T, then REOPEN the machine.
+  //  Units = GUI pixels, origin = top-left corner of the panel.
+  //  Colors = hex "AARRGGBB" (AA = opacity), in quotes.
+  //  A missing key keeps its default value; an invalid file = defaults.
   // =========================================================================
 
-  // ----- PANNEAU -----
-  "panel_w": 250,                 // largeur totale du panneau
-  "panel_h": 171,                 // hauteur totale
-  "border": 2,                    // épaisseur de la bordure verte
+  // ----- PANEL -----
+  "panel_w": 250,                 // total panel width
+  "panel_h": 171,                 // total height
+  "border": 2,                    // green border thickness
 
-  // ----- EN-TÊTE -----
-  "header_type_y": 7,             // Y du nom de type (centré horizontalement)
-  "header_divider_y": 19,         // Y de la ligne de séparation sous l'en-tête
+  // ----- HEADER -----
+  "header_type_y": 7,             // Y of the type name (horizontally centered)
+  "header_divider_y": 19,         // Y of the divider line below the header
 
-  // ----- LISTE D'ARTICLES -----
-  "list_top": 25,                 // Y de la 1re ligne d'article
-  "row_h": 20,                    // hauteur d'une ligne
-  "visible_rows": 6,              // nb de lignes visibles (au-delà -> scrollbar)
-  "list_x_pad": 7,                // marge gauche/droite de la zone liste
-  "icon_x": 10,                   // X de l'icône d'item
-  "name_x": 33,                   // X du nom d'item
-  "cost_right_pad": 2,            // marge du coût vs bord droit de la liste
-  "icon_y_off": 1,                // Y de l'icône dans la ligne (monte/descend l'icône)
-  "text_y_off": 6,                // Y du nom + coût dans la ligne
+  // ----- ITEM LIST -----
+  "list_top": 25,                 // Y of the 1st item row
+  "row_h": 20,                    // height of one row
+  "visible_rows": 6,              // number of visible rows (beyond -> scrollbar)
+  "list_x_pad": 7,                // left/right margin of the list area
+  "icon_x": 10,                   // X of the item icon
+  "name_x": 33,                   // X of the item name
+  "cost_right_pad": 2,            // cost margin vs right edge of the list
+  "icon_y_off": 1,                // icon Y within the row (raises/lowers the icon)
+  "text_y_off": 6,                // Y of the name + cost within the row
 
-  // ----- PIED -----
-  "footer_divider_y": 149,        // Y de la ligne de séparation au-dessus du pied
-  "footer_y": 156,                // Y du texte "LUCKY LVL" + niveau
+  // ----- FOOTER -----
+  "footer_divider_y": 149,        // Y of the divider line above the footer
+  "footer_y": 156,                // Y of the "LUCKY LVL" text + level
 
   // ----- SCROLLBAR -----
-  "scrollbar_w": 6,               // largeur de la scrollbar
-  "scrollbar_right_margin": 13,   // distance entre la scrollbar et le bord droit
-  "scrollbar_top": 25,            // Y du haut de la scrollbar
-  "scrollbar_height": 119,        // longueur du rail
+  "scrollbar_w": 6,               // scrollbar width
+  "scrollbar_right_margin": 13,   // distance between the scrollbar and the right edge
+  "scrollbar_top": 25,            // Y of the top of the scrollbar
+  "scrollbar_height": 119,        // rail length
 
-  // ----- LIGNES DE BALAYAGE (effet CRT) -----
-  "scan_spacing": 3,              // espacement des lignes sombres fixes
-  "scan_moving": 3,               // nb de lignes vertes qui défilent
-  "scan_speed": 1.1,              // vitesse de défilement
+  // ----- SCANLINES (CRT effect) -----
+  "scan_spacing": 3,              // spacing of the fixed dark lines
+  "scan_moving": 3,               // number of green lines that scroll
+  "scan_speed": 1.1,              // scroll speed
 
-  // ----- COULEURS (AARRGGBB) -----
-  "c_bg": "F0061309",             // fond du panneau (vert très sombre)
-  "c_border": "FF2BBF5A",         // bordure verte
-  "c_divider": "FF1F8A4D",        // lignes de séparation
-  "c_txt": "FF6CF08A",            // texte vert vif (abordable)
-  "c_txt_dim": "FF3C8F5A",        // texte vert atténué
-  "c_txt_lock": "FF2E6B45",       // coût trop cher (+ cadenas)
-  "c_hover": "335CF08A",          // surbrillance de ligne au survol
-  "c_scan_dark": "1A000000",      // lignes de balayage sombres
-  "c_scan_line": "335CF08A",      // lignes vertes qui défilent
-  "c_sb_track": "FF0C2A18",       // rail de la scrollbar
-  "c_sb_thumb": "FF2BBF5A",       // curseur de la scrollbar
+  // ----- COLORS (AARRGGBB) -----
+  "c_bg": "F0061309",             // panel background (very dark green)
+  "c_border": "FF2BBF5A",         // green border
+  "c_divider": "FF1F8A4D",        // divider lines
+  "c_txt": "FF6CF08A",            // bright green text (affordable)
+  "c_txt_dim": "FF3C8F5A",        // dimmed green text
+  "c_txt_lock": "FF2E6B45",       // cost too expensive (+ padlock)
+  "c_hover": "335CF08A",          // row highlight on hover
+  "c_scan_dark": "1A000000",      // dark scanlines
+  "c_scan_line": "335CF08A",      // green lines that scroll
+  "c_sb_track": "FF0C2A18",       // scrollbar rail
+  "c_sb_thumb": "FF2BBF5A",       // scrollbar thumb
 
-  // ----- BADGE DE RARETÉ (pied, à droite) -----
-  "rarity_text_x": 230,           // bord DROIT du texte (aligné à droite -> gère la longueur variable)
-  "rarity_text_y": 156,           // Y du texte de rareté
-  "rarity_pill_x": 238,           // X du centre de la pastille clignotante
-  "rarity_pill_y": 159,           // Y du centre de la pastille
-  "rarity_pill_radius": 3,        // rayon de la pastille
-  "rarity_pill_speed": 0.22       // vitesse de clignotement
+  // ----- RARITY BADGE (footer, right side) -----
+  "rarity_text_x": 230,           // RIGHT edge of the text (right-aligned -> handles variable length)
+  "rarity_text_y": 156,           // Y of the rarity text
+  "rarity_pill_x": 238,           // X of the center of the blinking pill
+  "rarity_pill_y": 159,           // Y of the center of the pill
+  "rarity_pill_radius": 3,        // pill radius
+  "rarity_pill_speed": 0.22       // blink speed
 }

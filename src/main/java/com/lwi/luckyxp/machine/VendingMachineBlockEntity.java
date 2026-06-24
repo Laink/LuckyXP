@@ -46,8 +46,8 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
     public void setRarity(Rarity rarity) {
         this.rarity = rarity;
         setChanged();
-        if (level != null && !level.isClientSide) {
-            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);  // push rarity to clients (LED tint)
+        if (level != null && !level.isClientSide && level.isLoaded(worldPosition)) {
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);  // push to clients (skipped during worldgen)
         }
     }
 

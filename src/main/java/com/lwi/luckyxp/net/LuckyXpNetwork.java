@@ -36,6 +36,24 @@ public final class LuckyXpNetwork {
                 .encoder(SyncEventPacket::encode)
                 .consumerMainThread(SyncEventPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(DebugBlocksPacket.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(DebugBlocksPacket::decode)
+                .encoder(DebugBlocksPacket::encode)
+                .consumerMainThread(DebugBlocksPacket::handle)
+                .add();
+    }
+
+    /** Send a debug player the nearby event blocks to draw "Luck +X" holograms over (empty list = clear). */
+    public static void sendDebugBlocks(ServerPlayer player, java.util.List<Long> positions, java.util.List<String> labels) {
+        if (player.connection == null) {
+            return;
+        }
+        long[] p = new long[positions.size()];
+        for (int i = 0; i < p.length; i++) {
+            p[i] = positions.get(i);
+        }
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                new DebugBlocksPacket(p, labels.toArray(new String[0])));
     }
 
     public static void sync(ServerPlayer player) {
@@ -49,15 +67,16 @@ public final class LuckyXpNetwork {
         );
     }
 
-    /** A wire snapshot of the global event (or its absence). */
+    /** A wire snapshot of the current event reveal (or its absence). */
     private static SyncEventPacket snapshot(LuckyEventManager mgr) {
         LuckyEvent e = mgr.active();
         if (e == null) {
-            return new SyncEventPacket(false, "", false, "", 0, 0, 0);
+            return new SyncEventPacket(false, "", 0, "", 0, 0.0F, false, 0, 0, 0L);
         }
-        boolean hasBlock = e.blockId() != null;
-        return new SyncEventPacket(true, e.type().id, hasBlock,
-                hasBlock ? e.blockId().toString() : "", e.magnitude(), mgr.ticksRemaining(), mgr.totalTicks());
+        int scope = e.isNothing() ? 0 : (e.isSingle() ? 1 : 2);
+        String block = e.isSingle() && e.blockId() != null ? e.blockId().toString() : "";
+        return new SyncEventPacket(true, e.type().id, scope, block, e.luckPercent(), e.xpMult(),
+                e.isMega(), mgr.revealRemaining(), mgr.revealTotal(), mgr.seed());
     }
 
     /** Push the current global event state to every connected client (start/stop/periodic resync). */

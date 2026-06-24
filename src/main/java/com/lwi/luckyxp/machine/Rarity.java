@@ -32,7 +32,7 @@ public enum Rarity {
             case COMMON -> 0x5CF08A;     // green
             case RARE -> 0x4FA8FF;       // azure
             case EPIC -> 0xC264FF;       // purple
-            case LEGENDARY -> 0xFFE21C;  // bright yellow-gold (pétant)
+            case LEGENDARY -> 0xFFE21C;  // bright yellow-gold (vivid)
         };
     }
 

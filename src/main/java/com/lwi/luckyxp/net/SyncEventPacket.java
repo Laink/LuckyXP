@@ -8,39 +8,53 @@ import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
 
-/** Broadcasts the current global Lucky XP event (or its absence) to clients for the HUD timer / roulette. */
+/**
+ * Broadcasts the current Lucky XP event reveal (or its absence) to clients for the case-opening roulette.
+ * Carries the v4 outcome: scope (0=nothing/1=single/2=jackpot), the single block id, the value
+ * (luckPercent for LUCK, xpMult for XP), the mega flag, the reveal countdown, and a seed for a
+ * deterministic spin. The event exists client-side only during the reveal (no temporal phase).
+ */
 public class SyncEventPacket {
     public final boolean present;
     public final String typeId;
-    public final boolean hasBlock;
-    public final String blockId;
-    public final int magnitude;
+    public final int scope;         // 0 = NOTHING, 1 = SINGLE, 2 = JACKPOT
+    public final String blockId;    // SINGLE only
+    public final int luckPercent;   // LUCK value
+    public final float xpMult;      // XP value
+    public final boolean mega;      // value roll hit its max
     public final int ticksRemaining;
     public final int totalTicks;
+    public final long seed;
 
-    public SyncEventPacket(boolean present, String typeId, boolean hasBlock, String blockId,
-                           int magnitude, int ticksRemaining, int totalTicks) {
+    public SyncEventPacket(boolean present, String typeId, int scope, String blockId, int luckPercent,
+                           float xpMult, boolean mega, int ticksRemaining, int totalTicks, long seed) {
         this.present = present;
         this.typeId = typeId;
-        this.hasBlock = hasBlock;
+        this.scope = scope;
         this.blockId = blockId;
-        this.magnitude = magnitude;
+        this.luckPercent = luckPercent;
+        this.xpMult = xpMult;
+        this.mega = mega;
         this.ticksRemaining = ticksRemaining;
         this.totalTicks = totalTicks;
+        this.seed = seed;
     }
 
     public static SyncEventPacket decode(FriendlyByteBuf buf) {
         boolean present = buf.readBoolean();
         if (!present) {
-            return new SyncEventPacket(false, "", false, "", 0, 0, 0);
+            return new SyncEventPacket(false, "", 0, "", 0, 0.0F, false, 0, 0, 0L);
         }
         String typeId = buf.readUtf();
-        boolean hasBlock = buf.readBoolean();
-        String blockId = hasBlock ? buf.readUtf() : "";
-        int magnitude = buf.readInt();
+        int scope = buf.readVarInt();
+        String blockId = scope == 1 ? buf.readUtf() : "";
+        int luckPercent = buf.readVarInt();
+        float xpMult = buf.readFloat();
+        boolean mega = buf.readBoolean();
         int remaining = buf.readVarInt();
         int total = buf.readVarInt();
-        return new SyncEventPacket(true, typeId, hasBlock, blockId, magnitude, remaining, total);
+        long seed = buf.readLong();
+        return new SyncEventPacket(true, typeId, scope, blockId, luckPercent, xpMult, mega, remaining, total, seed);
     }
 
     public void encode(FriendlyByteBuf buf) {
@@ -49,13 +63,16 @@ public class SyncEventPacket {
             return;
         }
         buf.writeUtf(typeId);
-        buf.writeBoolean(hasBlock);
-        if (hasBlock) {
+        buf.writeVarInt(scope);
+        if (scope == 1) {
             buf.writeUtf(blockId);
         }
-        buf.writeInt(magnitude);
+        buf.writeVarInt(luckPercent);
+        buf.writeFloat(xpMult);
+        buf.writeBoolean(mega);
         buf.writeVarInt(ticksRemaining);
         buf.writeVarInt(totalTicks);
+        buf.writeLong(seed);
     }
 
     public static void handle(SyncEventPacket pkt, Supplier<NetworkEvent.Context> ctxSup) {

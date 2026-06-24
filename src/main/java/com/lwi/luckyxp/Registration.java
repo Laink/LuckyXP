@@ -5,6 +5,7 @@ import com.lwi.luckyxp.machine.MachineType;
 import com.lwi.luckyxp.machine.VendingMachineBlock;
 import com.lwi.luckyxp.machine.VendingMachineBlockEntity;
 import com.lwi.luckyxp.machine.VendingMachineMenu;
+import com.lwi.luckyxp.worldgen.VendingStandFeature;
 import com.lwi.luckyxp.entity.LuckyXpOrb;
 import com.lwi.luckyxp.net.LuckyXpNetwork;
 import com.lwi.luckyxp.xp.BreakXp;
@@ -19,6 +20,7 @@ import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.levelgen.feature.Feature;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraftforge.common.extensions.IForgeMenuType;
@@ -39,6 +41,9 @@ public final class Registration {
     public static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(ForgeRegistries.MENU_TYPES, LuckyXpMod.MODID);
     public static final DeferredRegister<EntityType<?>> ENTITIES = DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, LuckyXpMod.MODID);
     public static final DeferredRegister<CreativeModeTab> TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, LuckyXpMod.MODID);
+    public static final DeferredRegister<Feature<?>> FEATURES = DeferredRegister.create(ForgeRegistries.FEATURES, LuckyXpMod.MODID);
+
+    public static final RegistryObject<VendingStandFeature> VENDING_STAND = FEATURES.register("vending_stand", VendingStandFeature::new);
 
     /** One vending-machine block per type (the block IS the type; rarity lives on the entity/stand). */
     public static final Map<MachineType, RegistryObject<Block>> MACHINES = new EnumMap<>(MachineType.class);
@@ -88,6 +93,7 @@ public final class Registration {
         MENUS.register(modBus);
         ENTITIES.register(modBus);
         TABS.register(modBus);
+        FEATURES.register(modBus);
         modBus.addListener(Registration::commonSetup);
     }
 

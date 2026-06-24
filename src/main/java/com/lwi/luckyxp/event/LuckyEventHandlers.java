@@ -1,23 +1,18 @@
 package com.lwi.luckyxp.event;
 
-import com.lwi.luckytweaks.api.LuckyTweaksApi;
 import com.lwi.luckyxp.LuckyXpMod;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.event.level.BlockEvent;
-import net.minecraftforge.eventbus.api.EventPriority;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.registries.ForgeRegistries;
 
 /**
- * Server-side glue for Lucky XP events: counts the single global event down (overworld tick), and
- * applies a LUCK event's chance % to qualifying lucky-block breaks. The DOUBLE_XP multiplier is applied
- * separately in {@code BreakXp} (it scales the XP award, not the drop roll).
+ * Server-side glue for Lucky XP events (design v4): drives the event reveal (overworld) and the block
+ * apparition queue (every dimension). There is no break-time hook anymore — a Luck event's boost lives in
+ * the spawned blocks' own Luck NBT, and an XP event's ×mult lives in {@link XpBlockData}.
  */
 @Mod.EventBusSubscriber(modid = LuckyXpMod.MODID)
 public final class LuckyEventHandlers {
@@ -28,36 +23,22 @@ public final class LuckyEventHandlers {
         if (event.phase != TickEvent.Phase.END || !(event.level instanceof ServerLevel level)) {
             return;
         }
+        LuckyBlockShower.tickLevel(level);          // event block apparition (every dimension)
         if (level.dimension() != Level.OVERWORLD) {
-            return; // one global event, ticked on the overworld where its SavedData lives
+            return; // the one global event reveal is ticked on the overworld where its SavedData lives
         }
         MinecraftServer server = level.getServer();
         LuckyEventManager.get(server).serverTick(server);
+        if (level.getGameTime() % 10 == 0) {
+            EventDebug.tickSync(server);          // refresh debug "Luck +X" holograms for debug players
+        }
     }
 
-    /**
-     * Apply the active LUCK event's chance to a matching lucky-block break, at {@code HIGH} (after Lucky
-     * Tweaks captures + resets the break state at HIGHEST), exactly like the ring/belt/malus do.
-     */
-    @SubscribeEvent(priority = EventPriority.HIGH)
-    public static void onLuckyBlockBreak(BlockEvent.BreakEvent event) {
-        if (!(event.getPlayer() instanceof ServerPlayer player)) {
-            return;
-        }
-        if (!LuckyTweaksApi.isLuckyBlock(event.getState())) {
-            return;
-        }
-        MinecraftServer server = player.getServer();
-        if (server == null) {
-            return;
-        }
-        LuckyEvent active = LuckyEventManager.get(server).active();
-        if (active == null || active.type() != LuckyEventType.LUCK) {
-            return;
-        }
-        ResourceLocation broken = ForgeRegistries.BLOCKS.getKey(event.getState().getBlock());
-        if (active.appliesTo(broken)) {
-            LuckyTweaksApi.addChance(active.magnitude());
-        }
+    /** Clear in-memory bookkeeping so it never bleeds into the next world (static state). */
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        LuckyBlockShower.clear();
+        EventDebug.clear();
     }
 }
+

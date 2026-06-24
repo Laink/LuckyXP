@@ -153,8 +153,8 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
     private void renderFooter(GuiGraphics g) {
         String lab = "LUCKY LVL ";
         int x = leftPos + 8, y = topPos + L.footerY;
-        g.drawString(this.font, lab, x, y, L.cTxtDim, false);                                  // label en vert atténué
-        g.drawString(this.font, Integer.toString(ClientXpCache.level), x + font.width(lab), y, L.cTxt, false);  // niveau en vert vif
+        g.drawString(this.font, lab, x, y, L.cTxtDim, false);                                  // label in dimmed green
+        g.drawString(this.font, Integer.toString(ClientXpCache.level), x + font.width(lab), y, L.cTxt, false);  // level in bright green
         renderRarityBadge(g);
     }
 
@@ -168,8 +168,8 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
         float pulse = 0.5F + 0.5F * (float) Math.sin(animTicks * L.rarityPillSpeed);
         int cx = leftPos + L.rarityPillX, cy = topPos + L.rarityPillY, rad = L.rarityPillRadius;
         drawDot(g, cx, cy, rad + 2, withAlpha(rgb, (int) (35 + 55 * pulse)));   // halo
-        drawDot(g, cx, cy, rad, withAlpha(rgb, (int) (130 + 125 * pulse)));     // coeur clignotant
-        drawDot(g, cx - 1, cy - 1, rad - 2, withAlpha(0xFFFFFF, (int) (80 * pulse)));  // reflet
+        drawDot(g, cx, cy, rad, withAlpha(rgb, (int) (130 + 125 * pulse)));     // blinking core
+        drawDot(g, cx - 1, cy - 1, rad - 2, withAlpha(0xFFFFFF, (int) (80 * pulse)));  // highlight
     }
 
     private void drawDot(GuiGraphics g, int cx, int cy, int r, int argb) {
