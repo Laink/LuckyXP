@@ -2,6 +2,7 @@ package com.lwi.luckyxp.client;
 
 import com.lwi.luckyxp.LuckyXpConfig;
 import com.lwi.luckyxp.LuckyXpMod;
+import com.lwi.luckytweaks.client.LocatorOverlay;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -58,6 +59,12 @@ public final class LuckyXpHud {
                     graphics.pose().pushPose();
                     graphics.pose().translate(0.0, liftAmount(), 0.0);
                     draw(graphics, w, h);
+                    // Player Locator (Lucky Tweaks): markers on the green vanilla XP bar, name plaques
+                    // raised above the blue Lucky XP bar so they don't cover it. Drawn here -- inside the
+                    // lift-cancelled matrix -- so it sits at the bars' true on-screen position.
+                    int markerY = h - LuckyXpConfig.CLIENT.vanillaXpBarY.get();
+                    int plaqueY = shouldShow() ? h - LuckyXpConfig.CLIENT.luckyXpBarY.get() : markerY;
+                    LocatorOverlay.renderLocatorOnBar(graphics, w, h, markerY, plaqueY, partialTick);
                     graphics.pose().popPose();
                 });
     }
