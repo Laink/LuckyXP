@@ -1,5 +1,6 @@
 package com.lwi.luckyxp.event;
 
+import com.lwi.luckystats.api.LuckyStatsApi;
 import com.lwi.luckyxp.net.LuckyXpNetwork;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -128,6 +129,16 @@ public final class LuckyEventManager extends SavedData {
         int luckRaw = xp ? 0 : ev.luckPercent();
         float mult = xp ? ev.xpMult() : 0.0F;
         LuckyBlockShower.shower(server, block, xp, luckRaw, mult, Math.max(1, ev.count()), ev.isMega());
+        // Event history (Lucky Stats screen): every online player witnessed this event.
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            LuckyStatsApi.incrementCounter(p, "luckyxp_events", 1);
+            if (ev.isJackpot()) {
+                LuckyStatsApi.incrementCounter(p, "luckyxp_jackpots", 1);
+            }
+            if (ev.isMega()) {
+                LuckyStatsApi.incrementCounter(p, "luckyxp_megas", 1);
+            }
+        }
     }
 
     /**

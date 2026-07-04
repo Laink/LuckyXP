@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 
+import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -48,14 +49,14 @@ public final class EventBlockData extends SavedData {
         setDirty();
     }
 
-    /** XP multiplier for this position AND forgets it (player broke it). 0 if not a tracked event block. */
-    public float consume(BlockPos pos) {
+    /** The entry at this position AND forgets it (player broke it), or null if not a tracked event block. */
+    @Nullable
+    public Entry consume(BlockPos pos) {
         Entry e = blocks.remove(pos.asLong());
         if (e != null) {
             setDirty();
-            return e.xpMult;
         }
-        return 0.0F;
+        return e;
     }
 
     public boolean isEmpty() {

@@ -41,6 +41,14 @@ description='''${mod_description}'''
     ordering="AFTER"
     side="BOTH"
 
+# Lucky Stats (event history counters shown on its HUD/stats screen)
+[[dependencies.${mod_id}]]
+    modId="luckystats"
+    mandatory=true
+    versionRange="[1.0,)"
+    ordering="AFTER"
+    side="BOTH"
+
 # Curios - provides the head equipment slot for the Lucky Glasses (shipped by the modpack).
 [[dependencies.${mod_id}]]
     modId="curios"

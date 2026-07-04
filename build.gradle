@@ -55,8 +55,9 @@ repositories {
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
-    // Sibling mod -- compile-time only; the modpack supplies it at runtime (never bundled).
+    // Sibling mods -- compile-time only; the modpack supplies them at runtime (never bundled).
     compileOnly files("libs/luckytweaks-${luckytweaks_version}.jar")
+    compileOnly files("libs/luckystats-${luckystats_version}.jar")
     // Curios API - provides the head slot for the Lucky Glasses. Compile-only: the full Curios mod
     // is already supplied by the modpack at runtime, so we only need its API to compile against.
     compileOnly fg.deobf("top.theillusivec4.curios:curios-forge:${curios_version}:api")

@@ -39,8 +39,10 @@ public final class LuckyBlockShower {
     private static final int MIN_SPACING = 4;        // min blocks between two event blocks of the same shower
     private static final int PROTECT_INTERVAL = 5;   // ticks between protection sweeps
 
+    private static final int AMBIENT_INTERVAL = 20;  // ticks between ambient sparkles on waiting event blocks
+
     private record Pending(ResourceLocation dim, BlockPos pos, ResourceLocation block,
-                           int luckRaw, float xpMult, boolean mega, int index, long atGameTime) {}
+                           int luckRaw, float xpMult, boolean mega, boolean jackpot, int index, long atGameTime) {}
 
     private static final List<Pending> PENDING = new ArrayList<>();
 
@@ -78,7 +80,7 @@ public final class LuckyBlockShower {
                 }
                 chosen.add(pos);
                 PENDING.add(new Pending(dim, pos, pick, isXp ? 0 : luckRaw, isXp ? xpMult : 0.0F,
-                        mega, chosen.size() - 1, now + (long) chosen.size() * STAGGER));
+                        mega, block == null, chosen.size() - 1, now + (long) chosen.size() * STAGGER));
             }
         }
     }
@@ -100,6 +102,9 @@ public final class LuckyBlockShower {
         }
         if (level.getGameTime() % PROTECT_INTERVAL == 0) {
             protect(level);
+        }
+        if (level.getGameTime() % AMBIENT_INTERVAL == 0) {
+            ambient(level);
         }
     }
 
@@ -151,6 +156,8 @@ public final class LuckyBlockShower {
                 8, 0.3, 0.4, 0.3, 0.0);
         if (pd.mega()) {
             fireworks(level, pos);
+        } else if (pd.jackpot()) {
+            jackpotBurst(level, pos);                              // the JACKPOT's own smaller party
         }
     }
 
@@ -173,6 +180,34 @@ public final class LuckyBlockShower {
                 40, 0.5, 0.5, 0.5, 0.08);
         playAt(level, pos, "entity.firework_rocket.large_blast", 1.2F, 1.0F);
         playAt(level, pos, "entity.firework_rocket.twinkle", 1.0F, 1.0F);
+    }
+
+    /** Smaller celebration on each block of a (non-mega) JACKPOT: totem sparkle + a chime. */
+    private static void jackpotBurst(ServerLevel level, BlockPos pos) {
+        level.sendParticles(ParticleTypes.TOTEM_OF_UNDYING, pos.getX() + 0.5, pos.getY() + 0.9, pos.getZ() + 0.5,
+                16, 0.4, 0.4, 0.4, 0.15);
+        playAt(level, pos, "block.amethyst_block.chime", 1.0F, 1.2F);
+    }
+
+    /**
+     * Gentle beacon on every event block still waiting to be broken, so the hidden ones can be spotted:
+     * gold sparks for a Luck-infused block, blue soul flames for an XP block. Runs on the tracked set
+     * ({@link EventBlockData}), so it stops the moment a block is consumed.
+     */
+    private static void ambient(ServerLevel level) {
+        EventBlockData data = EventBlockData.get(level);
+        if (data.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<Long, EventBlockData.Entry> me : data.view().entrySet()) {
+            BlockPos pos = BlockPos.of(me.getKey());
+            boolean xp = me.getValue().xpMult > 0.0F;
+            // Spawn ABOVE the block (top face is at +1.0), tight vertical spread: particles born
+            // inside the block are simply invisible.
+            level.sendParticles(xp ? ParticleTypes.SOUL_FIRE_FLAME : ParticleTypes.WAX_OFF,
+                    pos.getX() + 0.5, pos.getY() + 1.25, pos.getZ() + 0.5,
+                    3, 0.3, 0.12, 0.3, 0.0);
+        }
     }
 
     private static void playAt(ServerLevel level, BlockPos pos, String soundId, float vol, float pitch) {
