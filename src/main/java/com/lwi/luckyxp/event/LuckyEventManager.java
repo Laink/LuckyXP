@@ -21,12 +21,17 @@ import javax.annotation.Nullable;
 public final class LuckyEventManager extends SavedData {
     private static final String NAME = "luckyxp_events";
     private static final int RESYNC_INTERVAL = 20;
+    /** Reveal duration: ~20.5s = 5s hype + 2 rolls, each with a read pause, + held result. */
+    public static final int REVEAL_TICKS = 410;
 
     @Nullable private LuckyEvent active;
     private int revealRemaining;
     private int revealTotal;
     private long seed;
     private boolean preview;
+    // Daily auto-trigger state (LuckyEventScheduler): the last day a roll happened + the pity counter.
+    private long lastRolledDay = -1L;
+    private int dryDays;
 
     public static LuckyEventManager get(MinecraftServer server) {
         return server.overworld().getDataStorage()
@@ -52,6 +57,26 @@ public final class LuckyEventManager extends SavedData {
 
     public long seed() {
         return seed;
+    }
+
+    /** Last in-game day the daily auto-roll happened (-1 = never). */
+    public long lastRolledDay() {
+        return lastRolledDay;
+    }
+
+    /** Consecutive event-less days (drives the pity guarantee). */
+    public int dryDays() {
+        return dryDays;
+    }
+
+    public void markRolled(long day) {
+        lastRolledDay = day;
+        setDirty();
+    }
+
+    public void setDryDays(int days) {
+        dryDays = Math.max(0, days);
+        setDirty();
     }
 
     /** Start the roulette reveal for {@code revealTicks}; the result is decided up front in {@code event}. */
@@ -142,6 +167,8 @@ public final class LuckyEventManager extends SavedData {
                 data.preview = tag.getBoolean("Preview");
             }
         }
+        data.lastRolledDay = tag.contains("LastRolledDay") ? tag.getLong("LastRolledDay") : -1L;
+        data.dryDays = tag.getInt("DryDays");
         return data;
     }
 
@@ -154,6 +181,8 @@ public final class LuckyEventManager extends SavedData {
             tag.putLong("Seed", seed);
             tag.putBoolean("Preview", preview);
         }
+        tag.putLong("LastRolledDay", lastRolledDay);
+        tag.putInt("DryDays", dryDays);
         return tag;
     }
 }

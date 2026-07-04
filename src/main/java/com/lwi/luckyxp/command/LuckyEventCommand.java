@@ -2,10 +2,13 @@ package com.lwi.luckyxp.command;
 
 import com.lwi.luckytweaks.api.LuckyTweaksApi;
 import com.lwi.luckyxp.LuckyXpMod;
+import com.lwi.luckyxp.LuckyEventConfig;
+import com.lwi.luckyxp.event.EventRolls;
 import com.lwi.luckyxp.event.LuckyBlockShower;
 import com.lwi.luckyxp.event.LuckyEvent;
 import com.lwi.luckyxp.event.LuckyEvent.Scope;
 import com.lwi.luckyxp.event.LuckyEventManager;
+import com.lwi.luckyxp.event.LuckyEventScheduler;
 import com.lwi.luckyxp.event.LuckyEventType;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
@@ -21,13 +24,13 @@ import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
-import java.util.List;
 
 /**
  * DEV/TEST command {@code /luckyevent} (op 2) for the design-v4 events (block apparition). Decides an
@@ -37,13 +40,14 @@ import java.util.List;
  *   <li>{@code start} — fully random outcome (~5% RIEN, ~5% JACKPOT, else single ; value rolled)</li>
  *   <li>{@code start xp [all|&lt;block&gt;] [mult]} · {@code start luck [all|&lt;block&gt;] [percent]}</li>
  *   <li>{@code start nothing} · {@code preview [same args]} (roulette only, no blocks, no gate) · {@code stop} · {@code status}</li>
+ *   <li>{@code roll} — force TODAY'S daily auto-roll now (chance + pity, consumes the day; repeatable for testing streaks)</li>
  *   <li>{@code shower …} — spawn blocks directly (skip the roulette), to feel the apparition</li>
  * </ul>
  */
 @Mod.EventBusSubscriber(modid = LuckyXpMod.MODID)
 public final class LuckyEventCommand {
-    private static final int REVEAL_TICKS = 410;     // ~20.5s : 5s hype + 2 rolls, each with a read pause, + held result
-    private static final int JACKPOT_COUNT = 20;
+    private static final int REVEAL_TICKS = LuckyEventManager.REVEAL_TICKS;
+    private static final int JACKPOT_COUNT = EventRolls.JACKPOT_COUNT;
 
     private static final SuggestionProvider<CommandSourceStack> LUCKY_BLOCKS = (ctx, builder) ->
             SharedSuggestionProvider.suggest(
@@ -57,6 +61,7 @@ public final class LuckyEventCommand {
                 .requires(src -> src.hasPermission(2))
                 .then(Commands.literal("stop").executes(ctx -> stop(ctx.getSource())))
                 .then(Commands.literal("status").executes(ctx -> status(ctx.getSource())))
+                .then(Commands.literal("roll").executes(ctx -> forceRoll(ctx.getSource())))
                 .then(outcomeArgs(Commands.literal("start"), false))     // real event (shower + End/dragon gate)
                 .then(outcomeArgs(Commands.literal("preview"), true))    // roulette only, no effect, no gate
                 // --- shower : test direct de l'apparition (saute la roulette) ---
@@ -120,44 +125,22 @@ public final class LuckyEventCommand {
         return DoubleArgumentType.getDouble(ctx, "mult");
     }
 
-    // ---- value / count rolls ----
+    // ---- value / count rolls (shared with the daily auto-trigger) ----
     private static float rollXpMult(RandomSource rng) {
-        int r = rng.nextInt(100);
-        return r < 30 ? 1.5F : (r < 90 ? 2.0F : 4.0F);          // 30% / 60% / 10%
+        return EventRolls.rollXpMult(rng);
     }
 
     private static int rollLuckPercent(RandomSource rng) {
-        int r = rng.nextInt(100);
-        if (r < 20) return 10;
-        if (r < 45) return 30;
-        if (r < 65) return 50;
-        if (r < 80) return 70;
-        if (r < 90) return 90;
-        return 100;                                             // ~10% mega
+        return EventRolls.rollLuckPercent(rng);
     }
 
     private static int singleCount(RandomSource rng) {
-        return 5 + rng.nextInt(6);                              // 5-10 (hidden)
+        return EventRolls.singleCount(rng);
     }
 
     // ---- start (roulette) ----
     private static int startRandom(CommandSourceStack src, boolean pv) {
-        RandomSource rng = src.getLevel().getRandom();
-        boolean xp = rng.nextBoolean();
-        LuckyEventType type = xp ? LuckyEventType.DOUBLE_XP : LuckyEventType.LUCK;
-        int roll = rng.nextInt(100);
-        if (roll < 5) {
-            return startEvent(src, LuckyEvent.nothing(type), pv);
-        }
-        Scope scope = roll < 10 ? Scope.JACKPOT : Scope.SINGLE;
-        ResourceLocation block = scope == Scope.SINGLE ? randomBlock(src) : null;
-        if (scope == Scope.SINGLE && block == null) {
-            scope = Scope.JACKPOT;                              // no lucky block here -> jackpot
-        }
-        int count = scope == Scope.JACKPOT ? JACKPOT_COUNT : singleCount(rng);
-        LuckyEvent ev = xp ? LuckyEvent.xp(scope, block, rollXpMult(rng), count)
-                : LuckyEvent.luck(scope, block, rollLuckPercent(rng), count);
-        return startEvent(src, ev, pv);
+        return startEvent(src, EventRolls.rollOutcome(src.getLevel()), pv);
     }
 
     private static int startNothing(CommandSourceStack src, boolean pv) {
@@ -230,13 +213,47 @@ public final class LuckyEventCommand {
     }
 
     private static int status(CommandSourceStack src) {
-        LuckyEventManager mgr = LuckyEventManager.get(src.getServer());
+        MinecraftServer server = src.getServer();
+        LuckyEventManager mgr = LuckyEventManager.get(server);
         LuckyEvent ev = mgr.active();
         if (ev == null) {
             src.sendSuccess(() -> Component.literal("No Lucky event is active.").withStyle(ChatFormatting.GRAY), false);
-            return Command.SINGLE_SUCCESS;
+        } else {
+            src.sendSuccess(() -> Component.literal(describe(ev) + " — revealing...").withStyle(ev.type().color), false);
         }
-        src.sendSuccess(() -> Component.literal(describe(ev) + " — revealing...").withStyle(ev.type().color), false);
+        String auto;
+        if (!LuckyEventConfig.COMMON.autoEvents.get()) {
+            auto = "OFF";
+        } else {
+            long day = server.overworld().getDayTime() / 24000L;
+            auto = (int) Math.round(LuckyEventConfig.COMMON.chancePerDay.get() * 100) + "%/day, pity "
+                    + LuckyEventConfig.COMMON.pityDays.get()
+                    + (mgr.lastRolledDay() >= day ? ", today: rolled" : ", today: pending")
+                    + ", dry days: " + mgr.dryDays();
+        }
+        String autoLine = "Auto events: " + auto;
+        src.sendSuccess(() -> Component.literal(autoLine).withStyle(ChatFormatting.GRAY), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    /** Force TODAY'S daily auto-roll now (testing): same chance + pity path, consumes the day, repeatable. */
+    private static int forceRoll(CommandSourceStack src) {
+        MinecraftServer server = src.getServer();
+        LuckyEventManager mgr = LuckyEventManager.get(server);
+        if (mgr.hasActive()) {
+            src.sendFailure(Component.literal("An event reveal is already running."));
+            return 0;
+        }
+        String blocked = LuckyEventManager.startBlockReason(server);
+        if (blocked != null) {
+            src.sendFailure(Component.literal("Cannot start a Lucky event: " + blocked + "."));
+            return 0;
+        }
+        ServerLevel overworld = server.overworld();
+        long day = overworld.getDayTime() / 24000L;
+        boolean fired = LuckyEventScheduler.rollDay(server, overworld, mgr, day);
+        String msg = fired ? "Daily roll: event fired!" : "Daily roll: no event (" + mgr.dryDays() + " dry day(s))";
+        src.sendSuccess(() -> Component.literal(msg).withStyle(fired ? ChatFormatting.GOLD : ChatFormatting.GRAY), true);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -285,19 +302,6 @@ public final class LuckyEventCommand {
     }
 
     // ---- shared ----
-    @Nullable
-    private static ResourceLocation randomBlock(CommandSourceStack src) {
-        ResourceLocation dim = src.getLevel().dimension().location();
-        List<ResourceLocation> ids = LuckyTweaksApi.getLuckyBlockIds(dim);
-        if (ids.isEmpty()) {
-            ids = LuckyTweaksApi.getLuckyBlockIds();
-        }
-        if (ids.isEmpty()) {
-            return null;
-        }
-        return ids.get(src.getLevel().getRandom().nextInt(ids.size()));
-    }
-
     private static boolean validateBlock(CommandSourceStack src, ResourceLocation block) {
         if (!LuckyTweaksApi.getLuckyBlockIds().contains(block)) {
             src.sendFailure(Component.literal("Not a lucky block: " + block + " (tab-complete an id, or use 'all')."));

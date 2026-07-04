@@ -28,6 +28,7 @@ public final class LuckyEventHandlers {
             return; // the one global event reveal is ticked on the overworld where its SavedData lives
         }
         MinecraftServer server = level.getServer();
+        LuckyEventScheduler.tick(level);            // daily auto-trigger (morning window + pity)
         LuckyEventManager.get(server).serverTick(server);
         if (level.getGameTime() % 10 == 0) {
             EventDebug.tickSync(server);          // refresh debug "Luck +X" holograms for debug players
@@ -39,6 +40,7 @@ public final class LuckyEventHandlers {
     public static void onServerStopped(ServerStoppedEvent event) {
         LuckyBlockShower.clear();
         EventDebug.clear();
+        LuckyEventScheduler.clear();
     }
 }
 
