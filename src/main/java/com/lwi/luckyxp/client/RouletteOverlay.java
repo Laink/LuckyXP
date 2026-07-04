@@ -132,7 +132,7 @@ public final class RouletteOverlay {
         } else if (p < LOCK2_END) {
             // lock 2 : value strip stopped on the win -- a beat to read the amount, mirroring the block lock
             drawValueStrip(g, font, cx, stripCY, vpW, 1.0F, xp);
-            String label = xp ? "x" + fmtMult(ClientEventCache.xpMult) + " XP" : "+" + ClientEventCache.luckPercent + "%";
+            String label = xp ? "x" + fmtMult(ClientEventCache.xpMult) + " XP" : "+" + ClientEventCache.luckPercent;
             drawScaledCentered(g, font, label, cx, stripCY + CELL / 2 + 14, 1.2F,
                     xp ? xpColor(ClientEventCache.xpMult) : luckColor(ClientEventCache.luckPercent));
         } else {
@@ -277,7 +277,7 @@ public final class RouletteOverlay {
                 col = xpColor(m);
             } else {
                 int v = (i == WIN_VALUE) ? ClientEventCache.luckPercent : LUCK_VALUES[mod(hash(i), LUCK_VALUES.length)];
-                label = "+" + v + "%";
+                label = "+" + v;
                 col = luckColor(v);
             }
             int cl = cxi - CELL / 2 + 2;
@@ -304,7 +304,7 @@ public final class RouletteOverlay {
 
         // content
         String name = kind == KIND_NOTHING ? "NOTHING" : (kind == KIND_ALL ? "ALL BLOCKS" : blockName(ClientEventCache.blockId));
-        String value = kind == KIND_NOTHING ? null : (xp ? "x" + fmtMult(ClientEventCache.xpMult) + " XP" : "+" + ClientEventCache.luckPercent + "%");
+        String value = kind == KIND_NOTHING ? null : (xp ? "x" + fmtMult(ClientEventCache.xpMult) + " XP" : "+" + ClientEventCache.luckPercent);
         int valueCol = xp ? xpColor(ClientEventCache.xpMult) : luckColor(ClientEventCache.luckPercent);
         String sub = kind == KIND_NOTHING ? "no luck..." : (mega ? "MEGA JACKPOT !" : (kind == KIND_ALL ? "JACKPOT !" : null));
 

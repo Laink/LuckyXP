@@ -47,7 +47,7 @@ public final class DebugBlockRenderer {
                 continue;
             }
             BlockPos bp = BlockPos.of(ClientDebugBlocks.pos[i]);
-            int color = label.contains("XP") ? 0xFF55FFFF : 0xFFFFD23D;   // aqua for XP, gold for Luck
+            int color = label.contains("XP") ? 0xFF55FFFF : luckColor(label);   // aqua for XP; Luck coloured by value
             ps.pushPose();
             ps.translate(bp.getX() + 0.5 - camPos.x, bp.getY() + 1.3 - camPos.y, bp.getZ() + 0.5 - camPos.z);
             ps.mulPose(cam.rotation());                 // face the camera (billboard)
@@ -59,5 +59,19 @@ public final class DebugBlockRenderer {
             ps.popPose();
         }
         buffer.endBatch();
+    }
+
+    /** Colour the Luck hologram by its value: negative = red, positive = green, +100 (max) = gold, 0 = white. */
+    private static int luckColor(String label) {
+        int luck;
+        try {                                                   // label is "Luck +X" / "Luck X" / "Luck -X"
+            luck = Integer.parseInt(label.substring(label.lastIndexOf(' ') + 1));
+        } catch (RuntimeException ignored) {
+            return 0xFFFFD23D;                                  // unparseable -> gold fallback
+        }
+        if (luck >= 100) return 0xFFFFD23D;                     // gold  : max infusion
+        if (luck > 0)    return 0xFF55FF55;                     // green : positive
+        if (luck < 0)    return 0xFFFF5555;                     // red   : negative
+        return 0xFFFFFFFF;                                      // white : zero
     }
 }

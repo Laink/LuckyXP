@@ -85,7 +85,7 @@ public final class LuckyEvent {
         return scope == Scope.SINGLE;
     }
 
-    /** The value roll hit its maximum (Luck +100% or XP ×4): the MEGA JACKPOT (fireworks). */
+    /** The value roll hit its maximum (Luck +100 or XP ×4): the MEGA JACKPOT (fireworks). */
     public boolean isMega() {
         if (scope == Scope.NOTHING) {
             return false;

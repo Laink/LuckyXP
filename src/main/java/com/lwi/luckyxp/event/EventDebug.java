@@ -1,6 +1,7 @@
 package com.lwi.luckyxp.event;
 
 import com.lwi.luckytweaks.api.LuckyTweaksApi;
+import com.lwi.luckyxp.item.LuckyGlassesItem;
 import com.lwi.luckyxp.net.LuckyXpNetwork;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -21,7 +22,7 @@ import java.util.UUID;
  * Tweaks' single debug toggle {@code /luckychance debug} (so that one command shows the chat recap AND the
  * block luck). The server scans the nearby chunks' block entities (lucky blocks store their Luck on a BE),
  * reads the same Luck the inventory tooltip shows, and resyncs labels to debug players periodically.
- * (Precursor to a future "lucky glasses" item.)
+ * Also driven by the wearable {@link LuckyGlassesItem Lucky Glasses} (same holograms, no op needed).
  */
 public final class EventDebug {
     private static final Set<UUID> SHOWING = new HashSet<>();   // players we've sent holograms to (to clear on off)
@@ -33,7 +34,7 @@ public final class EventDebug {
     /** Each call (throttled by the caller): refresh holograms for debug-on players, clear for those who turned it off. */
     public static void tickSync(MinecraftServer server) {
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            if (LuckyTweaksApi.isBreakDebugOn(p)) {
+            if (LuckyTweaksApi.isBreakDebugOn(p) || LuckyGlassesItem.isWorn(p)) {
                 sync(p);
                 SHOWING.add(p.getUUID());
             } else if (SHOWING.remove(p.getUUID())) {

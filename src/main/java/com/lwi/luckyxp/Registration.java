@@ -7,6 +7,7 @@ import com.lwi.luckyxp.machine.VendingMachineBlockEntity;
 import com.lwi.luckyxp.machine.VendingMachineMenu;
 import com.lwi.luckyxp.worldgen.VendingStandFeature;
 import com.lwi.luckyxp.entity.LuckyXpOrb;
+import com.lwi.luckyxp.item.LuckyGlassesItem;
 import com.lwi.luckyxp.net.LuckyXpNetwork;
 import com.lwi.luckyxp.xp.BreakXp;
 import net.minecraft.core.registries.Registries;
@@ -70,6 +71,10 @@ public final class Registration {
     public static final RegistryObject<MenuType<VendingMachineMenu>> VENDING_MACHINE_MENU =
             MENUS.register("vending_machine", () -> IForgeMenuType.create(VendingMachineMenu::new));
 
+    /** Curios head item: reveals the Luck holograms over nearby lucky blocks while worn. */
+    public static final RegistryObject<Item> LUCKY_GLASSES = ITEMS.register("lucky_glasses",
+            () -> new LuckyGlassesItem(new Item.Properties().stacksTo(1)));
+
     public static final RegistryObject<EntityType<LuckyXpOrb>> LUCKY_XP_ORB = ENTITIES.register("lucky_xp_orb",
             () -> EntityType.Builder.<LuckyXpOrb>of(LuckyXpOrb::new, MobCategory.MISC)
                     .sized(0.5F, 0.5F).clientTrackingRange(6).updateInterval(20).build("lucky_xp_orb"));
@@ -81,6 +86,7 @@ public final class Registration {
                 for (MachineType t : MachineType.values()) {
                     output.accept(MACHINE_ITEMS.get(t).get());
                 }
+                output.accept(LUCKY_GLASSES.get());
             })
             .build());
 

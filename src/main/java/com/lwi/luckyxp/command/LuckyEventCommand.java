@@ -176,7 +176,7 @@ public final class LuckyEventCommand {
         RandomSource rng = src.getLevel().getRandom();
         int p = percent >= 0 ? percent : rollLuckPercent(rng);
         if (p <= 0) {
-            return startEvent(src, LuckyEvent.nothing(LuckyEventType.LUCK), pv);   // 0% = miss
+            return startEvent(src, LuckyEvent.nothing(LuckyEventType.LUCK), pv);   // 0 = miss
         }
         int count = scope == Scope.JACKPOT ? JACKPOT_COUNT : singleCount(rng);
         return startEvent(src, LuckyEvent.luck(scope, block, p, count), pv);
@@ -253,7 +253,7 @@ public final class LuckyEventCommand {
         boolean mega = amount >= 100;
         LuckyBlockShower.shower(src.getServer(), block, false, amount, 0.0F, count, mega);
         String tgt = block == null ? count + " blocs varies" : count + " x " + block;
-        src.sendSuccess(() -> Component.literal("Shower LUCK +" + amount + "% : " + tgt + (mega ? "  [MEGA]" : ""))
+        src.sendSuccess(() -> Component.literal("Shower LUCK +" + amount + " : " + tgt + (mega ? "  [MEGA]" : ""))
                 .withStyle(ChatFormatting.GOLD), true);
         return Command.SINGLE_SUCCESS;
     }
@@ -311,7 +311,7 @@ public final class LuckyEventCommand {
             return "RIEN (miss)";
         }
         String scope = ev.isJackpot() ? "TOUS (JACKPOT)" : String.valueOf(ev.blockId());
-        String val = ev.type() == LuckyEventType.DOUBLE_XP ? ("x" + ev.xpMult() + " XP") : ("+" + ev.luckPercent() + "%");
+        String val = ev.type() == LuckyEventType.DOUBLE_XP ? ("x" + ev.xpMult() + " XP") : ("+" + ev.luckPercent());
         return val + " sur " + scope + (ev.isMega() ? "  [MEGA JACKPOT]" : "");
     }
 }

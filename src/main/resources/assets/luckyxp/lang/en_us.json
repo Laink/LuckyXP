@@ -3,5 +3,7 @@
   "block.luckyxp.vending_machine_infused_lb": "Infused Lucky Block Vending Machine",
   "block.luckyxp.vending_machine_ores": "Ore Vending Machine",
   "itemGroup.luckyxp": "Lucky XP",
-  "container.luckyxp.vending_machine": "Vending Machine"
+  "container.luckyxp.vending_machine": "Vending Machine",
+  "item.luckyxp.lucky_glasses": "Lucky Glasses",
+  "tooltip.luckyxp.glasses.desc": "Reveals the Luck of nearby lucky blocks while worn"
 }

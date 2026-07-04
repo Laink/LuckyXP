@@ -45,10 +45,21 @@ minecraft {
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
+repositories {
+    maven {
+        // Curios API (head slot for the Lucky Glasses). Curios itself ships with the modpack at runtime.
+        name = 'Illusive Soulworks'
+        url = 'https://maven.theillusivec4.top/'
+    }
+}
+
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     // Sibling mod -- compile-time only; the modpack supplies it at runtime (never bundled).
     compileOnly files("libs/luckytweaks-${luckytweaks_version}.jar")
+    // Curios API - provides the head slot for the Lucky Glasses. Compile-only: the full Curios mod
+    // is already supplied by the modpack at runtime, so we only need its API to compile against.
+    compileOnly fg.deobf("top.theillusivec4.curios:curios-forge:${curios_version}:api")
 }
 
 tasks.named('processResources', ProcessResources).configure {
