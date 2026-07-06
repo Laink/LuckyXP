@@ -1,14 +1,18 @@
 package com.lwi.luckyxp.worldgen;
 
+import com.lwi.luckyxp.LuckyXpCommonConfig;
 import com.lwi.luckyxp.Registration;
 import com.lwi.luckyxp.machine.MachineType;
 import com.lwi.luckyxp.machine.Rarity;
 import com.lwi.luckyxp.machine.VendingMachineBlock;
 import com.lwi.luckyxp.machine.VendingMachineBlockEntity;
+import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.WorldGenLevel;
+import net.minecraft.world.level.levelgen.Heightmap;
+import org.slf4j.Logger;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LanternBlock;
@@ -28,7 +32,10 @@ import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConf
  * rug colour, machine stock/LED) and a machine type. Left bay left open for a future merchant NPC.
  */
 public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final int FLAGS = 2;
+    /** Max ground-height spread across the footprint before the spot is rejected. */
+    private static final int MAX_UNEVENNESS = 2;
 
     public VendingStandFeature() {
         super(NoneFeatureConfiguration.CODEC);
@@ -40,16 +47,26 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
         BlockPos o = ctx.origin();
         RandomSource rand = ctx.random();
 
-        Rarity rarity = Rarity.roll(rand);
+        if (!suitable(level, o)) {
+            return false;
+        }
+
+        Rarity rarity = Rarity.roll(rand, new int[]{
+                LuckyXpCommonConfig.COMMON.weightCommon.get(),
+                LuckyXpCommonConfig.COMMON.weightRare.get(),
+                LuckyXpCommonConfig.COMMON.weightEpic.get(),
+                LuckyXpCommonConfig.COMMON.weightLegendary.get()});
         MachineType type = MachineType.values()[rand.nextInt(MachineType.values().length)];
 
         BlockState air = Blocks.AIR.defaultBlockState();
         BlockState floor = Blocks.STONE_BRICKS.defaultBlockState();
         BlockState fence = Blocks.OAK_FENCE.defaultBlockState();
         BlockState plate = Blocks.OAK_PRESSURE_PLATE.defaultBlockState();
-        BlockState stripe = awningWool(rarity).defaultBlockState();
+        // Single stall colour on purpose (user 2026-07-04): the rarity is read on the machine's own
+        // screen LED / trade GUI, never on the stand, so every stand looks the same from afar.
+        BlockState stripe = Blocks.RED_WOOL.defaultBlockState();
         BlockState white = Blocks.WHITE_WOOL.defaultBlockState();
-        BlockState rug = awningCarpet(rarity).defaultBlockState();
+        BlockState rug = Blocks.RED_CARPET.defaultBlockState();
         BlockState lantern = Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true);
         BlockState valance = Blocks.OAK_TRAPDOOR.defaultBlockState()
                 .setValue(BlockStateProperties.HALF, Half.TOP)
@@ -67,10 +84,18 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
             }
         }
 
-        // 2. floor + thin centre rug
+        // 2. floor + thin centre rug (with a short foundation under dips, so no corner floats)
         for (int dx = 0; dx <= 4; dx++) {
             for (int dz = 0; dz <= 3; dz++) {
                 level.setBlock(o.offset(dx, 0, dz), floor, FLAGS);
+                for (int dy = -1; dy >= -3; dy--) {
+                    BlockPos below = o.offset(dx, dy, dz);
+                    BlockState st = level.getBlockState(below);
+                    if (!st.isAir() && st.getFluidState().isEmpty() && !st.canBeReplaced()) {
+                        break; // reached real ground
+                    }
+                    level.setBlock(below, floor, FLAGS);
+                }
             }
         }
         level.setBlock(o.offset(2, 1, 1), rug, FLAGS);
@@ -128,28 +153,48 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
         if (level.getBlockEntity(mPos) instanceof VendingMachineBlockEntity be) {
             be.setRarity(rarity);
         }
+        LOGGER.info("Vending stand placed: {} {} at {} {} {}", rarity, type, o.getX(), o.getY(), o.getZ());
         return true;
+    }
+
+    /**
+     * Whether this surface spot can host the 5x4 stall: every footprint column must be dry and sit on
+     * REAL ground (soft cover — grass, snow layers — is skipped; leaves are rejected, so no stall on a
+     * flat tree canopy), and the real-ground heights may not spread more than {@link #MAX_UNEVENNESS}
+     * (dips up to that are bridged by the foundation). Caves are impossible by construction: the
+     * placement heightmap always resolves the world surface. Rejecting returns false — the rarity roll
+     * simply tries elsewhere another chunk.
+     */
+    private static boolean suitable(WorldGenLevel level, BlockPos o) {
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+        for (int dx = 0; dx <= 4; dx++) {
+            for (int dz = -1; dz <= 3; dz++) {
+                int h = level.getHeight(Heightmap.Types.WORLD_SURFACE_WG, o.getX() + dx, o.getZ() + dz);
+                // Walk down through soft cover (plants, snow layers) counted by the heightmap,
+                // to measure the REAL ground and its height.
+                int gy = h - 1;
+                BlockPos.MutableBlockPos ground = new BlockPos.MutableBlockPos(o.getX() + dx, gy, o.getZ() + dz);
+                BlockState gs = level.getBlockState(ground);
+                int guard = 6;
+                while (guard-- > 0 && (gs.isAir() || (gs.canBeReplaced() && gs.getFluidState().isEmpty()))) {
+                    ground.move(0, -1, 0);
+                    gs = level.getBlockState(ground);
+                }
+                if (!gs.getFluidState().isEmpty() || !level.getBlockState(ground.above()).getFluidState().isEmpty()) {
+                    return false; // water/lava column (ocean, river, pond)
+                }
+                if (gs.is(net.minecraft.tags.BlockTags.LEAVES) || gs.isAir()) {
+                    return false; // tree canopy / hollow surface
+                }
+                min = Math.min(min, ground.getY());
+                max = Math.max(max, ground.getY());
+            }
+        }
+        return max - min <= MAX_UNEVENNESS;
     }
 
     private static int awningY(int dz) {
         return dz >= 2 ? 5 : (dz >= 0 ? 4 : 3);
-    }
-
-    private static Block awningWool(Rarity r) {
-        return switch (r) {
-            case COMMON -> Blocks.LIME_WOOL;
-            case RARE -> Blocks.LIGHT_BLUE_WOOL;
-            case EPIC -> Blocks.PURPLE_WOOL;
-            case LEGENDARY -> Blocks.YELLOW_WOOL;
-        };
-    }
-
-    private static Block awningCarpet(Rarity r) {
-        return switch (r) {
-            case COMMON -> Blocks.LIME_CARPET;
-            case RARE -> Blocks.LIGHT_BLUE_CARPET;
-            case EPIC -> Blocks.PURPLE_CARPET;
-            case LEGENDARY -> Blocks.YELLOW_CARPET;
-        };
     }
 }

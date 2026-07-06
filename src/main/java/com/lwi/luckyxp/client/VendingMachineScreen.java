@@ -126,7 +126,11 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
             int costX = listRight - font.width(cost) - L.costRightPad;
             int textY = rowY + L.textYOff;
 
-            String name = trim(stack.getHoverName().getString(), costX - (leftPos + L.nameX) - 8);
+            // Strip embedded formatting codes (addon names carry literal colour/bold codes) so every
+            // name renders in the CRT's own normalized green.
+            String rawName = net.minecraft.ChatFormatting.stripFormatting(stack.getHoverName().getString());
+            String name = trim(rawName != null ? rawName : stack.getHoverName().getString(),
+                    costX - (leftPos + L.nameX) - 8);
             g.drawString(this.font, name, leftPos + L.nameX, textY, afford ? L.cTxt : L.cTxtDim, false);
             g.drawString(this.font, cost, costX, textY, afford ? L.cTxt : L.cTxtLock, false);
             if (!afford) {
@@ -209,6 +213,22 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
             g.renderTooltip(this.font, menu.getStock().get(idx).stack(), mouseX, mouseY);
         }
     }
+
+    // ---- JEI integration ----
+
+    /** The stock article under the mouse (stack + on-screen row rect), for JEI's R/U hotkeys. Null = none. */
+    @javax.annotation.Nullable
+    public JeiHover jeiHover(double mouseX, double mouseY) {
+        int idx = rowAt((int) mouseX, (int) mouseY);
+        if (idx < 0) {
+            return null;
+        }
+        int rowY = topPos + L.listTop + (idx - scrollRow) * L.rowH;
+        return new JeiHover(menu.getStock().get(idx).stack(),
+                new net.minecraft.client.renderer.Rect2i(listLeft(), rowY, listRight() - listLeft(), L.rowH));
+    }
+
+    public record JeiHover(ItemStack stack, net.minecraft.client.renderer.Rect2i area) {}
 
     // ---- input ----
 

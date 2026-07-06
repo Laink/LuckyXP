@@ -51,6 +51,11 @@ repositories {
         name = 'Illusive Soulworks'
         url = 'https://maven.theillusivec4.top/'
     }
+    maven {
+        // JEI API (optional integration: R/U hotkeys over the vending machine's articles).
+        name = 'BlameJared'
+        url = 'https://maven.blamejared.com/'
+    }
 }
 
 dependencies {
@@ -61,6 +66,10 @@ dependencies {
     // Curios API - provides the head slot for the Lucky Glasses. Compile-only: the full Curios mod
     // is already supplied by the modpack at runtime, so we only need its API to compile against.
     compileOnly fg.deobf("top.theillusivec4.curios:curios-forge:${curios_version}:api")
+    // JEI API, compile-only: the @JeiPlugin class is only ever loaded by JEI itself, so the mod
+    // runs fine without JEI installed.
+    compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-common-api:${jei_version}")
+    compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge-api:${jei_version}")
 }
 
 tasks.named('processResources', ProcessResources).configure {

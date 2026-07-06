@@ -1,5 +1,6 @@
 package com.lwi.luckyxp.machine;
 
+import com.lwi.luckytweaks.api.LuckyTweaksApi;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.Item;
@@ -26,7 +27,7 @@ public final class RewardPool {
         int tier = rarity.ordinal(); // 0 common .. 3 legendary
         switch (type) {
             case POTIONS -> rollPotions(out, tier);
-            case INFUSED_LB -> rollInfusedLb(out, rarity);
+            case INFUSED_LB -> rollInfusedLb(out, rarity, rng);
             case ORES -> rollOres(out, tier);
         }
         // Legendary machines always also offer a lucky tool, whatever the type.
@@ -53,25 +54,57 @@ public final class RewardPool {
         }
     }
 
-    private static void rollInfusedLb(List<Article> out, Rarity rarity) {
-        int luck;
-        int cost;
+    /**
+     * Infused-block machine (spec user 2026-07-04): 5 RANDOM lucky-block types, each infused to a
+     * random Luck inside the machine's tier band — common +10..+30, rare +30..+70, epic +70..+100,
+     * legendary flat +100. Values snap to steps of 5. Capped blocks stay in EVERY band (aligned with
+     * the lucky events, user 2026-07-06): their offered Luck is clamped to their own cap — a
+     * legendary machine sells the Chaos at its full +75 — and the price follows the REAL clamped
+     * value, so the tooltip and the cost never over-promise.
+     */
+    private static void rollInfusedLb(List<Article> out, Rarity rarity, RandomSource rng) {
+        int min;
+        int max;
         switch (rarity) {
-            case RARE -> { luck = 50; cost = 10; }
-            case EPIC -> { luck = 75; cost = 18; }
-            case LEGENDARY -> { luck = 100; cost = 30; }
-            default -> { luck = 25; cost = 5; }
+            case RARE -> { min = 30; max = 70; }
+            case EPIC -> { min = 70; max = 100; }
+            case LEGENDARY -> { min = 100; max = 100; }
+            default -> { min = 10; max = 30; }
         }
-        ItemStack lb = infusedLuckyBlock(luck);
-        if (!lb.isEmpty()) {
-            out.add(new Article(lb, cost));
-        }
-        // A cheaper lower-luck block too, so common machines aren't a single line.
-        if (rarity != Rarity.COMMON) {
-            ItemStack low = infusedLuckyBlock(25);
-            if (!low.isEmpty()) {
-                out.add(new Article(low, 5));
+        // lucky-mod blocks only: a cross-mod lucky-like (the Fuze blockling) cannot be infused
+        // through the normal infusion recipes, so a machine-exclusive infusion would be an
+        // anomaly (user 2026-07-04 - "si on ne peut pas l'infuser naturellement, pas de machine").
+        List<ResourceLocation> pool = new ArrayList<>(LuckyTweaksApi.getLuckyBlockIds());
+        pool.removeIf(id -> !"lucky".equals(id.getNamespace()));
+        shuffle(pool, rng);
+        int n = Math.min(5, pool.size());
+        for (int i = 0; i < n; i++) {
+            ResourceLocation id = pool.get(i);
+            int luck = (min == max) ? max : min + rng.nextInt(max - min + 1);
+            luck = Math.round(luck / 5.0F) * 5;             // clean steps of 5 (band bounds are multiples of 5)
+            Integer cap = LuckyTweaksApi.getLuckCap(id);
+            if (cap != null) {
+                luck = Math.min(luck, cap);
             }
+            ItemStack s = infusedBlock(id, luck);
+            if (!s.isEmpty()) {
+                out.add(new Article(s, costForLuck(luck)));
+            }
+        }
+    }
+
+    /** Level cost of an infused block, from its Luck (tunable): +10 -> 3, +30 -> 8, +70 -> 18, +100 -> 25. */
+    private static int costForLuck(int luck) {
+        return Math.max(3, Math.round(luck * 0.25F));
+    }
+
+    /** In-place Fisher-Yates with the world's RandomSource (Collections.shuffle needs java.util.Random). */
+    private static void shuffle(List<ResourceLocation> list, RandomSource rng) {
+        for (int i = list.size() - 1; i > 0; i--) {
+            int j = rng.nextInt(i + 1);
+            ResourceLocation tmp = list.get(i);
+            list.set(i, list.get(j));
+            list.set(j, tmp);
         }
     }
 
@@ -116,8 +149,8 @@ public final class RewardPool {
         out.add(new Article(s, cost));
     }
 
-    private static ItemStack infusedLuckyBlock(int luck) {
-        Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation("lucky", "lucky_block"));
+    private static ItemStack infusedBlock(ResourceLocation blockId, int luck) {
+        Item item = ForgeRegistries.ITEMS.getValue(blockId);   // block items share the block's id
         if (item == null) {
             return ItemStack.EMPTY;
         }

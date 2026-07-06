@@ -1,6 +1,6 @@
 package com.lwi.luckyxp.event;
 
-import com.lwi.luckyxp.LuckyEventConfig;
+import com.lwi.luckyxp.LuckyXpCommonConfig;
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -30,13 +30,16 @@ public final class LuckyEventScheduler {
     private LuckyEventScheduler() {}
 
     public static void tick(ServerLevel overworld) {
-        if (!LuckyEventConfig.COMMON.autoEvents.get()) {
+        if (!LuckyXpCommonConfig.COMMON.autoEvents.get()) {
             return;
         }
         MinecraftServer server = overworld.getServer();
         LuckyEventManager mgr = LuckyEventManager.get(server);
         long dayTime = overworld.getDayTime();
         long day = dayTime / 24000L;
+        if (day < LuckyXpCommonConfig.COMMON.firstEventDay.get()) {
+            return;   // too early in the world's life: no roll, no pity credit (user 2026-07-07)
+        }
         long lastRolled = mgr.lastRolledDay();
         if (day < lastRolled) {
             // Day-time went backwards (something rewound the clock and no TimeGuard redressed it):
@@ -49,8 +52,8 @@ public final class LuckyEventScheduler {
             return;                                     // today's roll is already done
         }
         int tod = (int) (dayTime % 24000L);
-        int winStart = LuckyEventConfig.COMMON.windowStart.get();
-        int winEnd = Math.max(winStart + 1, LuckyEventConfig.COMMON.windowEnd.get());
+        int winStart = LuckyXpCommonConfig.COMMON.windowStart.get();
+        int winEnd = Math.max(winStart + 1, LuckyXpCommonConfig.COMMON.windowEnd.get());
         if (day != plannedDay) {                        // first tick of a new day (or boot): pick today's moment
             plannedDay = day;
             plannedTick = winStart + overworld.getRandom().nextInt(winEnd - winStart);
@@ -84,8 +87,8 @@ public final class LuckyEventScheduler {
      */
     public static boolean rollDay(MinecraftServer server, ServerLevel overworld, LuckyEventManager mgr, long day) {
         mgr.markRolled(day);
-        boolean fire = mgr.dryDays() >= LuckyEventConfig.COMMON.pityDays.get()
-                || overworld.getRandom().nextDouble() < LuckyEventConfig.COMMON.chancePerDay.get();
+        boolean fire = mgr.dryDays() >= LuckyXpCommonConfig.COMMON.pityDays.get()
+                || overworld.getRandom().nextDouble() < LuckyXpCommonConfig.COMMON.chancePerDay.get();
         if (!fire) {
             mgr.setDryDays(mgr.dryDays() + 1);
             LOGGER.info("Lucky event daily roll (day {}): no event today ({} dry day(s))", day, mgr.dryDays());

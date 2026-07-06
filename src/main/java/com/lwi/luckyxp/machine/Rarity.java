@@ -36,18 +36,27 @@ public enum Rarity {
         };
     }
 
-    /** Roll a rarity by weight (used by worldgen to pick which machine to place). */
+    /** Roll a rarity by the enum's DEFAULT weights (worldgen passes the config weights instead). */
     public static Rarity roll(RandomSource rng) {
+        return roll(rng, new int[]{COMMON.weight, RARE.weight, EPIC.weight, LEGENDARY.weight});
+    }
+
+    /** Roll a rarity from explicit weights (ordinal order); all-zero falls back to the defaults. */
+    public static Rarity roll(RandomSource rng, int[] weights) {
         int total = 0;
-        for (Rarity r : values()) {
-            total += r.weight;
+        for (int w : weights) {
+            total += Math.max(0, w);
+        }
+        if (total <= 0) {
+            return roll(rng);
         }
         int x = rng.nextInt(total);
         for (Rarity r : values()) {
-            if (x < r.weight) {
+            int w = Math.max(0, weights[r.ordinal()]);
+            if (x < w) {
                 return r;
             }
-            x -= r.weight;
+            x -= w;
         }
         return COMMON;
     }

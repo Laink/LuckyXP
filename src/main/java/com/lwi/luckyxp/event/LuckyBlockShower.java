@@ -78,8 +78,16 @@ public final class LuckyBlockShower {
                 if (pick == null) {
                     continue;
                 }
+                // Clamp the event's Luck to THIS block's own cap (capped blocks are deliberately kept
+                // in the pool -- a jackpot may hand out a Chaos at its full +75). Clamping at placement
+                // keeps every display honest: the hologram/tooltip shows what the block will really roll.
+                int lr = isXp ? 0 : luckRaw;
+                Integer cap = LuckyTweaksApi.getLuckCap(pick);
+                if (cap != null && lr > cap) {
+                    lr = cap;
+                }
                 chosen.add(pos);
-                PENDING.add(new Pending(dim, pos, pick, isXp ? 0 : luckRaw, isXp ? xpMult : 0.0F,
+                PENDING.add(new Pending(dim, pos, pick, lr, isXp ? xpMult : 0.0F,
                         mega, block == null, chosen.size() - 1, now + (long) chosen.size() * STAGGER));
             }
         }

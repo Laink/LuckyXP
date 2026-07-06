@@ -19,6 +19,6 @@ public class LuckyXpMod {
         IEventBus modEventBus = context.getModEventBus();
         Registration.init(modEventBus);
         ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, LuckyXpConfig.CLIENT_SPEC);
-        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, LuckyEventConfig.COMMON_SPEC);
+        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, LuckyXpCommonConfig.COMMON_SPEC);
     }
 }

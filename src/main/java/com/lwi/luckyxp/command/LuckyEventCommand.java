@@ -2,7 +2,7 @@ package com.lwi.luckyxp.command;
 
 import com.lwi.luckytweaks.api.LuckyTweaksApi;
 import com.lwi.luckyxp.LuckyXpMod;
-import com.lwi.luckyxp.LuckyEventConfig;
+import com.lwi.luckyxp.LuckyXpCommonConfig;
 import com.lwi.luckyxp.event.EventRolls;
 import com.lwi.luckyxp.event.LuckyBlockShower;
 import com.lwi.luckyxp.event.LuckyEvent;
@@ -222,12 +222,12 @@ public final class LuckyEventCommand {
             src.sendSuccess(() -> Component.literal(describe(ev) + " — revealing...").withStyle(ev.type().color), false);
         }
         String auto;
-        if (!LuckyEventConfig.COMMON.autoEvents.get()) {
+        if (!LuckyXpCommonConfig.COMMON.autoEvents.get()) {
             auto = "OFF";
         } else {
             long day = server.overworld().getDayTime() / 24000L;
-            auto = (int) Math.round(LuckyEventConfig.COMMON.chancePerDay.get() * 100) + "%/day, pity "
-                    + LuckyEventConfig.COMMON.pityDays.get()
+            auto = (int) Math.round(LuckyXpCommonConfig.COMMON.chancePerDay.get() * 100) + "%/day, pity "
+                    + LuckyXpCommonConfig.COMMON.pityDays.get()
                     + (mgr.lastRolledDay() >= day ? ", today: rolled" : ", today: pending")
                     + ", dry days: " + mgr.dryDays();
         }
