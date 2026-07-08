@@ -65,7 +65,7 @@ public final class Registration {
             BLOCK_ENTITIES.register("vending_machine", () -> BlockEntityType.Builder.of(
                     VendingMachineBlockEntity::new,
                     MACHINES.get(MachineType.POTIONS).get(), MACHINES.get(MachineType.INFUSED_LB).get(),
-                    MACHINES.get(MachineType.ORES).get()
+                    MACHINES.get(MachineType.ORES).get(), MACHINES.get(MachineType.TOOLS).get()
             ).build(null));
 
     public static final RegistryObject<MenuType<VendingMachineMenu>> VENDING_MACHINE_MENU =
@@ -106,8 +106,10 @@ public final class Registration {
     private static void commonSetup(FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
             LuckyXpNetwork.register();
-            // Award Lucky XP whenever a player breaks a lucky block (scaled by the block's rarity proxy).
+            // A flat Lucky XP award on every lucky-block break...
             LuckyTweaksApi.registerBreakListener(BreakXp::onBroken);
+            // ...topped up on the same tick when the drop it rolled turns out to be legendary.
+            LuckyTweaksApi.registerLegendaryDropListener(BreakXp::onLegendaryDrop);
         });
     }
 }

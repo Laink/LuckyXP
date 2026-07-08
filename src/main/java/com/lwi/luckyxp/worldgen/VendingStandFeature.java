@@ -47,6 +47,14 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
         BlockPos o = ctx.origin();
         RandomSource rand = ctx.random();
 
+        // "1 stand per N chunks", drawn here rather than by a rarity_filter in the placed_feature, so
+        // the density stays tunable from the config instead of being frozen into the jar. The placed
+        // feature is therefore tried once per chunk and this is the first thing it does.
+        int chance = LuckyXpCommonConfig.COMMON.standChance.get();
+        if (chance > 1 && rand.nextInt(chance) != 0) {
+            return false;
+        }
+
         if (!suitable(level, o)) {
             return false;
         }
