@@ -8,7 +8,8 @@ package com.lwi.luckyxp.machine;
 public enum MachineType {
     POTIONS("potions"),
     INFUSED_LB("infused_lb"),
-    ORES("ores");
+    ORES("ores"),
+    TOOLS("tools");
 
     /** Stable id used in block/registry names, model paths and NBT. */
     public final String id;

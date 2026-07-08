@@ -10,8 +10,11 @@ import com.lwi.luckyxp.event.LuckyEvent.Scope;
 import com.lwi.luckyxp.event.LuckyEventManager;
 import com.lwi.luckyxp.event.LuckyEventScheduler;
 import com.lwi.luckyxp.event.LuckyEventType;
+import com.lwi.luckyxp.machine.Rarity;
+import com.lwi.luckyxp.machine.VendingMachineBlockEntity;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -25,12 +28,20 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
+import java.util.Locale;
 
 /**
  * DEV/TEST command {@code /luckyevent} (op 2) for the design-v4 events (block apparition). Decides an
@@ -53,6 +64,10 @@ public final class LuckyEventCommand {
             SharedSuggestionProvider.suggest(
                     LuckyTweaksApi.getLuckyBlockIds().stream().map(ResourceLocation::toString), builder);
 
+    private static final SuggestionProvider<CommandSourceStack> RARITIES = (ctx, builder) ->
+            SharedSuggestionProvider.suggest(
+                    Arrays.stream(Rarity.values()).map(r -> r.name().toLowerCase(Locale.ROOT)), builder);
+
     private LuckyEventCommand() {}
 
     @SubscribeEvent
@@ -62,6 +77,10 @@ public final class LuckyEventCommand {
                 .then(Commands.literal("stop").executes(ctx -> stop(ctx.getSource())))
                 .then(Commands.literal("status").executes(ctx -> status(ctx.getSource())))
                 .then(Commands.literal("roll").executes(ctx -> forceRoll(ctx.getSource())))
+                // --- machine : force the looked-at vending machine to a rarity + re-roll its stock (test) ---
+                .then(Commands.literal("machine")
+                        .then(Commands.argument("rarity", StringArgumentType.word()).suggests(RARITIES)
+                                .executes(ctx -> devMachine(ctx.getSource(), StringArgumentType.getString(ctx, "rarity")))))
                 .then(outcomeArgs(Commands.literal("start"), false))     // real event (shower + End/dragon gate)
                 .then(outcomeArgs(Commands.literal("preview"), true))    // roulette only, no effect, no gate
                 // --- shower : test direct de l'apparition (saute la roulette) ---
@@ -123,6 +142,45 @@ public final class LuckyEventCommand {
 
     private static double dbl(CommandContext<CommandSourceStack> ctx) {
         return DoubleArgumentType.getDouble(ctx, "mult");
+    }
+
+    // ---- machine test hook ----
+    /** Set the vending machine the player is looking at to {@code rarityName} and re-roll its stock,
+     *  so all four rarities can be inspected without worldgen. Dev-only; op-gated with the rest. */
+    private static int devMachine(CommandSourceStack src, String rarityName) {
+        ServerPlayer player = src.getPlayer();
+        if (player == null) {
+            src.sendFailure(Component.literal("Players only."));
+            return 0;
+        }
+        Rarity rarity;
+        try {
+            rarity = Rarity.valueOf(rarityName.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            src.sendFailure(Component.literal("Unknown rarity '" + rarityName + "' (common/rare/epic/legendary)."));
+            return 0;
+        }
+        ServerLevel level = player.serverLevel();
+        Vec3 eye = player.getEyePosition(1.0F);
+        Vec3 end = eye.add(player.getViewVector(1.0F).scale(20.0D));
+        BlockHitResult hit = level.clip(new ClipContext(eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+        if (hit.getType() != HitResult.Type.BLOCK) {
+            src.sendFailure(Component.literal("Look at a vending machine first."));
+            return 0;
+        }
+        BlockEntity be = level.getBlockEntity(hit.getBlockPos());
+        if (!(be instanceof VendingMachineBlockEntity)) {
+            be = level.getBlockEntity(hit.getBlockPos().below());   // only the lower half holds the BE
+        }
+        if (!(be instanceof VendingMachineBlockEntity machine)) {
+            src.sendFailure(Component.literal("That block is not a vending machine."));
+            return 0;
+        }
+        machine.devReroll(rarity, level);
+        final Rarity r = rarity;
+        src.sendSuccess(() -> Component.literal("Machine set to " + r.name() + " and re-rolled — reopen it.")
+                .withStyle(ChatFormatting.GREEN), false);
+        return Command.SINGLE_SUCCESS;
     }
 
     // ---- value / count rolls (shared with the daily auto-trigger) ----

@@ -85,6 +85,12 @@ public class VendingMachineMenu extends AbstractContainerMenu {
         if (!serverPlayer.getInventory().add(give)) {
             serverPlayer.drop(give, false);
         }
+        if (!article.extra().isEmpty()) {                       // bundled bonus (e.g. XP-pump's tank)
+            ItemStack bonus = article.extra().copy();
+            if (!serverPlayer.getInventory().add(bonus)) {
+                serverPlayer.drop(bonus, false);
+            }
+        }
         return true;
     }
 

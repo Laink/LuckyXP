@@ -64,6 +64,19 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         }
     }
 
+    /** Dev/test only (the {@code /luckyevent machine <rarity>} command): force a rarity and a fresh
+     *  stock roll, so a manually-placed machine (which defaults to COMMON) can be inspected at any
+     *  rarity without waiting on worldgen. Pushes the new rarity LED to clients. */
+    public void devReroll(Rarity r, Level level) {
+        this.rarity = r;
+        this.rolled = false;
+        ensureStock(level);
+        setChanged();
+        if (level != null && !level.isClientSide && level.isLoaded(worldPosition)) {
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+        }
+    }
+
     @Override
     public Component getDisplayName() {
         return Component.translatable("container.luckyxp.vending_machine");
@@ -82,6 +95,9 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         for (Article a : stock) {
             CompoundTag entry = new CompoundTag();
             entry.put("item", a.stack().save(new CompoundTag()));
+            if (!a.extra().isEmpty()) {
+                entry.put("extra", a.extra().save(new CompoundTag()));
+            }
             entry.putInt("cost", a.costLevels());
             list.add(entry);
         }
@@ -99,7 +115,9 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         ListTag list = tag.getList("Stock", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++) {
             CompoundTag entry = list.getCompound(i);
-            stock.add(new Article(ItemStack.of(entry.getCompound("item")), entry.getInt("cost")));
+            ItemStack item = ItemStack.of(entry.getCompound("item"));
+            ItemStack extra = entry.contains("extra") ? ItemStack.of(entry.getCompound("extra")) : ItemStack.EMPTY;
+            stock.add(new Article(item, extra, entry.getInt("cost")));
         }
     }
 

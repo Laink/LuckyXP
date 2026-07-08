@@ -317,9 +317,10 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
     private String typeLabel() {
         MachineType t = menu.getMachineType();
         return switch (t) {
-            case POTIONS -> "POTIONS";
+            case POTIONS -> "CONSUMABLES";
             case INFUSED_LB -> "LUCKY BLOCKS";
             case ORES -> "MINERALS";
+            case TOOLS -> "TOOLS";
         };
     }
 

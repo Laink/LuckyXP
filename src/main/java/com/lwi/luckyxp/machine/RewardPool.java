@@ -1,57 +1,377 @@
 package com.lwi.luckyxp.machine;
 
 import com.lwi.luckytweaks.api.LuckyTweaksApi;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Rolls a vending machine's stock from the reward pool, by {@link MachineType} (the category sold) and
  * {@link Rarity} (quality / level cost). Items are looked up by registry id at roll time and skipped if
  * absent, so this never hard-depends on addon/luckytools items.
  *
- * <p>Placeholder economy for now — real balance (exact rolls, level costs, infused potions from
- * Yakurum/Pink, skip-invasion, heal/repair, double-XP buff) is deferred to config. Keep the per-type
- * structure; only the contents/costs will change.
+ * <p>All four types are designed: POTIONS (consumables), INFUSED_LB, ORES (materials) and TOOLS.
+ * Items are absent-tolerant — a line whose item is not registered is simply left out.
  */
 public final class RewardPool {
     private RewardPool() {}
 
     public static List<Article> roll(MachineType type, Rarity rarity, RandomSource rng) {
         List<Article> out = new ArrayList<>();
-        int tier = rarity.ordinal(); // 0 common .. 3 legendary
         switch (type) {
-            case POTIONS -> rollPotions(out, tier);
+            case POTIONS -> rollConsumables(out, rarity, rng);
             case INFUSED_LB -> rollInfusedLb(out, rarity, rng);
-            case ORES -> rollOres(out, tier);
+            case ORES -> rollMaterials(out, rarity, rng);
+            case TOOLS -> rollTools(out, rarity, rng);
         }
-        // Legendary machines always also offer a lucky tool, whatever the type.
-        if (rarity == Rarity.LEGENDARY) {
-            ItemStack tool = luckyTool(rng);
-            if (!tool.isEmpty()) {
-                out.add(new Article(tool, 40));
-            }
-        }
+        // (Lucky tools / artifacts / accessories now live in their own TOOLS machine, not as a
+        //  legendary bonus on every type — user 2026-07-07.)
         return out;
     }
 
-    private static void rollPotions(List<Article> out, int tier) {
-        addPotion(out, "minecraft:strong_healing", 3 + tier);
-        addPotion(out, "minecraft:long_regeneration", 5 + tier * 2);
-        if (tier >= 1) {
-            addPotion(out, "minecraft:strong_strength", 5 + tier);
+    // =========================== CONSUMABLES machine (POTIONS) ===========================
+
+    /**
+     * Consumables machine ({@link MachineType#POTIONS} — it keeps its potion screen art): food, buff
+     * items and the three named potions of the lucky blocks. Same economy as the materials machine —
+     * flat per-line price, quantity grows with rarity, 5–10 lines drawn at random from the rarity's pool.
+     *
+     * <p>{@link #customPotion} rebuilds those three potions exactly as the lucky blocks do — same item,
+     * colour, name, and the same effect roll (the mod's {@code #luckyPotionEffects} template and the
+     * Water LB's explicit rows were decompiled and reproduced, user 2026-07-08). Legendary sells two of
+     * each: a second, independently rolled bottle rides along as the article's bonus stack, since
+     * potions do not stack.
+     */
+    private static void rollConsumables(List<Article> out, Rarity rarity, RandomSource rng) {
+        int r = rarity.ordinal();
+        List<Cons> pool = new ArrayList<>();
+        for (Cons c : CONSUMABLES) {
+            if (c.bands()[r] != null && (isPotionKey(c.ids()[0]) || anyPresent(c.ids()))) {
+                pool.add(c);
+            }
         }
-        if (tier >= 2) {
-            addItem(out, "minecraft:golden_apple", 1 + tier, 4 + tier * 2);
+        shuffle(pool, rng);
+        int show = Math.min(5 + rng.nextInt(6), pool.size());       // 5..10 lines
+        for (int i = 0; i < show; i++) {
+            Cons c = pool.get(i);
+            int[] band = c.bands()[r];
+            int count = band[0] + (band[1] > band[0] ? rng.nextInt(band[1] - band[0] + 1) : 0);
+            if (isPotionKey(c.ids()[0])) {
+                ItemStack first = customPotion(c.ids()[0], rng);
+                if (first.isEmpty()) {
+                    continue;
+                }
+                ItemStack second = count >= 2 ? customPotion(c.ids()[0], rng) : ItemStack.EMPTY;
+                out.add(new Article(first, second, c.price()));     // potions stack to 1: the 2nd rides as bonus
+            } else {
+                ItemStack s = stack(pickPresentId(c.ids(), rng), count);
+                if (!s.isEmpty()) {
+                    out.add(new Article(s, c.price()));
+                }
+            }
         }
-        if (tier >= 3) {
-            addItem(out, "minecraft:enchanted_golden_apple", 1, 30);
+    }
+
+    private static boolean isPotionKey(String id) {
+        return id.charAt(0) == '@';
+    }
+
+    private static boolean anyPresent(String[] ids) {
+        for (String id : ids) {
+            if (ForgeRegistries.ITEMS.containsKey(new ResourceLocation(id))) {
+                return true;
+            }
         }
+        return false;
+    }
+
+    /** A random id among those actually registered (so a missing addon just narrows the group). */
+    private static String pickPresentId(String[] ids, RandomSource rng) {
+        List<String> present = new ArrayList<>();
+        for (String id : ids) {
+            if (ForgeRegistries.ITEMS.containsKey(new ResourceLocation(id))) {
+                present.add(id);
+            }
+        }
+        return present.isEmpty() ? ids[0] : present.get(rng.nextInt(present.size()));
+    }
+
+    /** One consumables line: an item (or a group, one member picked per roll), a flat price, and its
+     *  quantity band per rarity. An id starting with {@code @} is one of the three custom potions. */
+    private record Cons(String[] ids, int price, int[][] bands) {}
+
+    private static final String[] BIC_CANDY = {
+        "born_in_chaos_v1:mint_candy", "born_in_chaos_v1:holiday_candy",
+        "born_in_chaos_v1:coffee_candy", "born_in_chaos_v1:chocolate_heart"
+    };
+    private static final String[] COOKED_MEAT = {
+        "minecraft:cooked_beef", "minecraft:cooked_porkchop", "minecraft:cooked_chicken",
+        "minecraft:cooked_mutton", "minecraft:cooked_rabbit"
+    };
+
+    private static final Cons[] CONSUMABLES = {
+        // ---------- food ----------
+        new Cons(new String[]{"minecraft:golden_apple"},            3, new int[][]{ {2,4},  {6,8},   null,  null   }),
+        new Cons(new String[]{"minecraft:enchanted_golden_apple"},  8, new int[][]{ {1,1},  {2,3},   {4,5}, {7,8}  }),
+        new Cons(new String[]{"minecraft:golden_carrot"},           3, new int[][]{ {5,10}, {10,20}, null,  null   }),
+        new Cons(new String[]{"yakurum:golden_fish"},               3, new int[][]{ {1,3},  null,    null,  null   }),
+        new Cons(new String[]{"kubejs:cheesecake_a_la_merde"},      2, new int[][]{ {1,1},  null,    null,  null   }),
+        new Cons(new String[]{"fuze_relics:blue_cord"},             2, new int[][]{ {5,10}, {10,15}, null,  null   }),
+        new Cons(BIC_CANDY,                                         2, new int[][]{ {2,4},  {6,8},   null,  null   }),
+        new Cons(new String[]{"born_in_chaos_v1:magical_holiday_candy"},
+                                                                    3, new int[][]{ {4,5},  {10,10}, {20,20}, null }),
+        new Cons(COOKED_MEAT,                                       2, new int[][]{ {5,10}, {10,20}, null,  null   }),
+        new Cons(new String[]{"yakurum:spiral_cookie"},             3, new int[][]{ null,   {1,2},   {3,5}, null   }),
+        new Cons(new String[]{"yakurum:water_apple"},               5, new int[][]{ null,   {1,2},   {2,3}, null   }),
+        new Cons(new String[]{"yakurum:enchanted.golden_fish"},     8, new int[][]{ null,   {1,2},   null,  null   }),
+        // the three never-consumed foods: Legendary only, so the 1% machine owns them outright
+        new Cons(new String[]{"artifacts:eternal_steak"},          14, new int[][]{ null,   null,    null,  {1,1}  }),
+        new Cons(new String[]{"relics:infinity_ham"},              14, new int[][]{ null,   null,    null,  {1,1}  }),
+        new Cons(new String[]{"born_in_chaos_v1:eternal_candy"},   14, new int[][]{ null,   null,    null,  {1,1}  }),
+        new Cons(new String[]{"yakurum:enchanted.water_apple"},    10, new int[][]{ null,   null,    {1,1}, {2,3}  }),
+        new Cons(new String[]{"yakurum:diamond_apple"},            10, new int[][]{ null,   null,    {1,2}, null   }),
+        new Cons(new String[]{"yakurum:enchanted.diamond_apple"},  12, new int[][]{ null,   null,    null,  {1,2}  }),
+        // ---------- buffs ----------
+        new Cons(new String[]{"yakurum:sacred_heart"},             10, new int[][]{ null,   {2,2},   {4,4}, {6,7}  }),
+        new Cons(new String[]{"yakurum:magic_coral"},              12, new int[][]{ null,   null,    {1,1}, {2,2}  }),
+        new Cons(new String[]{"yakurum:pink_orb"},                 14, new int[][]{ null,   null,    null,  {1,1}  }),
+        new Cons(new String[]{"yakurum:dew_gout"},                 12, new int[][]{ null,   null,    null,  {1,1}  }),
+        // ---------- the lucky blocks' named potions ----------
+        new Cons(new String[]{"@lucky_potion"},                    12, new int[][]{ null,   null,    {1,1}, {2,2}  }),
+        new Cons(new String[]{"@water_potion"},                    12, new int[][]{ null,   null,    {1,1}, {2,2}  }),
+        new Cons(new String[]{"@hero_potion"},                     12, new int[][]{ null,   null,    {1,1}, {2,2}  }),
+        // the Water LB's armour potions: one per tier, ordered by the armour they actually grant
+        new Cons(new String[]{"@armor_leather"},                    4, new int[][]{ {1,1},  null,    null,  null   }),
+        new Cons(new String[]{"@armor_golden"},                     6, new int[][]{ null,   {1,1},   null,  null   }),
+        new Cons(new String[]{"@armor_iron"},                       8, new int[][]{ null,   null,    {1,1}, null   }),
+        new Cons(new String[]{"@armor_diamond"},                   10, new int[][]{ null,   null,    null,  {1,1}  }),
+        // Energy Element
+        new Cons(new String[]{"@fighting_energy"},                  4, new int[][]{ {1,1},  null,    null,  null   }),
+        new Cons(new String[]{"@double_energy"},                    6, new int[][]{ null,   {1,1},   null,  null   }),
+        new Cons(new String[]{"@rainbow_energy"},                   8, new int[][]{ null,   null,    {1,1}, null   }),
+        new Cons(new String[]{"@full_heal_energy"},                 8, new int[][]{ {1,1},  {1,1},   {2,2}, null   }),
+    };
+
+    /**
+     * The Water Lucky Block's four armour potions, reproduced from its {@code drops.txt}. Each is a
+     * {@code yakurum:yakurum_splash_potion} carrying a single {@code yakurum:armor_boost}, whose effect
+     * is {@code ARMOR += 7.0 + amplifier} (ADDITION) for 3 minutes -- so the amplifiers below hand out
+     * exactly the vanilla armour values: leather 7, gold 11, iron 15, diamond 20.
+     */
+    private record ArmorPotion(String name, int amplifier, int colour) {}
+
+    private static final Map<String, ArmorPotion> ARMOR_POTIONS = Map.of(
+            "@armor_leather", new ArmorPotion("Leather Armor Potion",  0, 10511680),
+            "@armor_golden",  new ArmorPotion("Golden Armor Potion",   4, 15396439),
+            "@armor_iron",    new ArmorPotion("Iron Armor Potion",     8, 13027014),
+            "@armor_diamond", new ArmorPotion("Diamond Armor Potion", 13,  4910553)
+    );
+
+    /** Energy Element's Rainbow pool, verbatim -- {@code 0} is a real entry and resolves to no effect. */
+    private static final int[] RAINBOW_EFFECT_IDS = {
+        0, 1, 3, 5, 8, 10, 11, 12, 13, 14, 16, 21, 22, 23, 24, 26, 28, 29, 30, 32
+    };
+
+    /** "Rainbow Energy Potion", coloured letter by letter exactly as Energy Element writes it. */
+    private static final String RAINBOW_NAME =
+            "§4R§6a§ei§an§2b§bo§3w §9E§1n§5e§dr§cg§4y §6P§eo§at§2i§bo§3n";
+
+    /**
+     * The Lucky Block mod's {@code #luckyPotionEffects} pool, taken from the decompiled mod: its
+     * {@code usefulStatusEffectIds} list filtered to the non-HARMFUL ones. {@code glowing} really is
+     * listed twice in the mod, so it is here too — the template can hand out both entries.
+     */
+    private static final String[] LUCKY_POTION_EFFECTS = {
+        "speed", "haste", "strength", "instant_health", "jump_boost", "regeneration", "resistance",
+        "fire_resistance", "water_breathing", "invisibility", "night_vision", "absorption",
+        "saturation", "glowing", "glowing"
+    };
+
+    /** The Holy Water Potion's explicit effect rows, exactly as the Water LB drop writes them. */
+    private static final String[][] HOLY_WATER_ROWS = {
+        {"minecraft:jump_boost", "yakurum:climb"},
+        {"minecraft:regeneration", "yakurum:resurrection"},
+        {"minecraft:saturation", "minecraft:slow_falling"},
+        {"minecraft:strength"},
+        {"yakurum:archery", "minecraft:speed"},
+        {"minecraft:haste", "minecraft:resistance"},
+        {"yakurum:repair", "minecraft:health_boost"},
+        {"yakurum:thorns", "minecraft:absorption"},
+        {"minecraft:water_breathing", "minecraft:fire_resistance", "yakurum:immovable"},
+        {"minecraft:luck", "minecraft:dolphins_grace"},
+        {"minecraft:invisibility", "yakurum:step_up"},
+        {"minecraft:instant_health", "yakurum:cure"}
+    };
+    /** Only the first 8 Holy Water rows carry {@code Amplifier=#rand(0,3)}; the rest default to 0. */
+    private static final int HOLY_WATER_AMPLIFIED_ROWS = 8;
+
+    /** Rebuilds one of the lucky blocks' named potions, byte-for-byte like the drop that spawns it. */
+    private static ItemStack customPotion(String key, RandomSource rng) {
+        ArmorPotion armor = ARMOR_POTIONS.get(key);
+        if (armor != null) {
+            Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation("yakurum", "yakurum_splash_potion"));
+            if (item == null) {
+                return ItemStack.EMPTY;
+            }
+            ItemStack s = new ItemStack(item);
+            CompoundTag tag = s.getOrCreateTag();
+            tag.putInt("CustomPotionColor", armor.colour());
+            ListTag effects = new ListTag();
+            addPlainEffect(effects, "yakurum:armor_boost", armor.amplifier(), 3600);
+            if (effects.isEmpty()) {
+                return ItemStack.EMPTY;                 // Yakurum absent: don't sell an inert bottle
+            }
+            tag.put("CustomPotionEffects", effects);
+            nameTag(s, armor.name(), "green");
+            return s;
+        }
+        if ("@double_energy".equals(key) || "@fighting_energy".equals(key) || "@rainbow_energy".equals(key)
+                || "@full_heal_energy".equals(key)) {
+            Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation("minecraft", "potion"));
+            if (item == null) {
+                return ItemStack.EMPTY;
+            }
+            ItemStack s = new ItemStack(item);
+            CompoundTag tag = s.getOrCreateTag();
+            tag.putString("Potion", "minecraft:water");
+            ListTag effects = new ListTag();
+            String name;
+            if ("@double_energy".equals(key)) {
+                addRawEffect(effects, 22, 4, 500 + rng.nextInt(501));            // Absorption V, 25-50 s
+                name = "§e§lDouble Energy Potion";
+            } else if ("@fighting_energy".equals(key)) {
+                addRawEffect(effects, 5, 2, 200 + rng.nextInt(301));             // Strength III, 10-25 s
+                name = "§c§lFighting Energy Potion";
+            } else if ("@full_heal_energy".equals(key)) {
+                // Instant Health V -> heal(4 << 4) = 64, clamped to max health: a guaranteed full heal.
+                // Duration 6 is what the drops.txt writes; vanilla ignores it for instantaneous effects.
+                addRawEffect(effects, 6, 4, 6);
+                name = "§d§lFull Heal Energy Potion";
+            } else {
+                for (int i = 0; i < 4; i++) {                                    // 4 draws, id 0 = nothing
+                    addRawEffect(effects, RAINBOW_EFFECT_IDS[rng.nextInt(RAINBOW_EFFECT_IDS.length)],
+                            rng.nextInt(4), 300 + rng.nextInt(2701));
+                }
+                name = RAINBOW_NAME;
+            }
+            if (!effects.isEmpty()) {
+                tag.put("CustomPotionEffects", effects);
+            }
+            plainNameTag(s, name);
+            return s;
+        }
+        if ("@water_potion".equals(key)) {
+            Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation("yakurum", "yakurum_potion"));
+            if (item == null) {
+                return ItemStack.EMPTY;
+            }
+            ItemStack s = new ItemStack(item);
+            CompoundTag tag = s.getOrCreateTag();
+            tag.putInt("CustomPotionColor", 12318719);
+            ListTag effects = new ListTag();
+            for (int i = 0; i < HOLY_WATER_ROWS.length; i++) {
+                String[] row = HOLY_WATER_ROWS[i];
+                int amplifier = i < HOLY_WATER_AMPLIFIED_ROWS ? rng.nextInt(4) : 0;
+                int duration = i == HOLY_WATER_ROWS.length - 1 ? 1 : 5000 + rng.nextInt(7001);
+                addPlainEffect(effects, row[rng.nextInt(row.length)], amplifier, duration);
+            }
+            if (!effects.isEmpty()) {
+                tag.put("CustomPotionEffects", effects);
+            }
+            nameTag(s, "Holy Water Potion", "dark_blue");
+            return s;
+        }
+
+        Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation("minecraft", "potion"));
+        if (item == null) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack s = new ItemStack(item);
+        s.getOrCreateTag().putString("Potion", "fire_resistance");
+        // #luckyPotionEffects == chooseMultiRandomFrom(random, pool, 7..10): 7-10 distinct pool entries
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < LUCKY_POTION_EFFECTS.length; i++) {
+            order.add(i);
+        }
+        shuffle(order, rng);
+        int n = Math.min(7 + rng.nextInt(4), order.size());
+        ListTag effects = new ListTag();
+        for (int i = 0; i < n; i++) {
+            addTemplateEffect(effects, "minecraft:" + LUCKY_POTION_EFFECTS[order.get(i)], rng);
+        }
+        if (!effects.isEmpty()) {
+            s.getOrCreateTag().put("CustomPotionEffects", effects);
+        }
+        boolean hero = "@hero_potion".equals(key);
+        nameTag(s, hero ? "Hero's Potion" : "Lucky Potion", hero ? "blue" : "red");
+        return s;
+    }
+
+    /** One {@code #luckyPotionEffects} entry, as the mod's {@code randEffectInstance} builds it. */
+    private static void addTemplateEffect(ListTag list, String effectId, RandomSource rng) {
+        MobEffect effect = ForgeRegistries.MOB_EFFECTS.getValue(new ResourceLocation(effectId));
+        if (effect == null) {
+            return;
+        }
+        int id = MobEffect.getId(effect);
+        if (id < 0 || id > 127) {
+            return;                                     // CustomPotionEffects keeps the id as a byte
+        }
+        int max = effect.isInstantenous() ? 0 : 9600;   // instants get Duration 0
+        int min = max / 3;
+        CompoundTag t = new CompoundTag();
+        t.putByte("Id", (byte) id);
+        t.putByte("Amplifier", (byte) rng.nextInt(4));
+        t.putInt("Duration", max == 0 ? 0 : min + rng.nextInt(max - min + 1));
+        t.putBoolean("Ambient", false);
+        t.putBoolean("ShowParticles", true);
+        t.putBoolean("ShowIcon", true);
+        list.add(t);
+    }
+
+    /** An effect row with only Id / Amplifier / Duration — the Holy Water Potion's shape. */
+    private static void addPlainEffect(ListTag list, String effectId, int amplifier, int duration) {
+        MobEffect effect = ForgeRegistries.MOB_EFFECTS.getValue(new ResourceLocation(effectId));
+        if (effect == null) {
+            return;                                     // effect from an absent mod: just leave it out
+        }
+        int id = MobEffect.getId(effect);
+        if (id < 0 || id > 127) {
+            return;
+        }
+        CompoundTag t = new CompoundTag();
+        t.putByte("Id", (byte) id);
+        t.putByte("Amplifier", (byte) amplifier);
+        t.putInt("Duration", duration);
+        list.add(t);
+    }
+
+    private static void nameTag(ItemStack s, String text, String colour) {
+        s.getOrCreateTagElement("display").putString("Name",
+                "{\"text\":\"" + text + "\",\"color\":\"" + colour + "\",\"bold\":true}");
+    }
+
+    /** {@code display.Name} with no JSON style: the drops.txt names that carry their own § codes. */
+    private static void plainNameTag(ItemStack s, String text) {
+        s.getOrCreateTagElement("display").putString("Name", "{\"text\":\"" + text + "\"}");
+    }
+
+    /** A {@code CustomPotionEffects} entry written with the drops.txt's raw numeric effect id. */
+    private static void addRawEffect(ListTag list, int id, int amplifier, int duration) {
+        CompoundTag t = new CompoundTag();
+        t.putByte("Id", (byte) id);
+        t.putByte("Amplifier", (byte) amplifier);
+        t.putInt("Duration", duration);
+        list.add(t);
     }
 
     /**
@@ -99,55 +419,91 @@ public final class RewardPool {
     }
 
     /** In-place Fisher-Yates with the world's RandomSource (Collections.shuffle needs java.util.Random). */
-    private static void shuffle(List<ResourceLocation> list, RandomSource rng) {
+    private static <T> void shuffle(List<T> list, RandomSource rng) {
         for (int i = list.size() - 1; i > 0; i--) {
             int j = rng.nextInt(i + 1);
-            ResourceLocation tmp = list.get(i);
+            T tmp = list.get(i);
             list.set(i, list.get(j));
             list.set(j, tmp);
         }
     }
 
-    private static void rollOres(List<Article> out, int tier) {
-        switch (tier) {
-            case 0 -> {
-                addItem(out, "minecraft:iron_ingot", 4, 3);
-                addItem(out, "minecraft:copper_ingot", 8, 2);
+    /**
+     * Materials machine ({@link MachineType#ORES}) — four shelves: three infusion-ingredient families
+     * (Chaos / Born-in-Chaos, vanilla, Yakurum) plus gear/progression materials. It draws a random
+     * 5–10 of the lines available at the machine's rarity (pure random: no guaranteed family mix, but
+     * with a 9–15-line pool per rarity most machines still show a spread; user 2026-07-07).
+     *
+     * <p>Design principles (user, iterated 2026-07-07): the machine's RARITY is the reward — a rarer
+     * machine is just harder to find — so good goods appear early and higher-rarity machines give MORE
+     * of them at a FLAT per-line price (a legendary sells 5–6 krampus for the same price a rare sells
+     * 1–2). Each line's quantity is rolled inside its per-rarity band at generation and then frozen, so
+     * two same-rarity machines differ ("une même ligne peut être bof ou bien"). Infusion mats are sold
+     * raw (no NBT — the player infuses the block of their choice); prices are flat starting values, easy
+     * to tune. A line whose item is absent (e.g. BiC/Yakurum not installed) is filtered out first, so
+     * the 5–10 shown are always real items.
+     */
+    private static void rollMaterials(List<Article> out, Rarity rarity, RandomSource rng) {
+        int r = rarity.ordinal();
+        List<Line> eligible = new ArrayList<>();
+        for (Line line : MATERIALS_POOL) {
+            if (line.bands()[r] != null && ForgeRegistries.ITEMS.containsKey(new ResourceLocation(line.id()))) {
+                eligible.add(line);
             }
-            case 1 -> {
-                addItem(out, "minecraft:gold_ingot", 4, 5);
-                addItem(out, "minecraft:redstone", 16, 3);
-                addItem(out, "minecraft:iron_ingot", 8, 4);
-            }
-            case 2 -> {
-                addItem(out, "minecraft:diamond", 2, 10);
-                addItem(out, "minecraft:emerald", 4, 8);
-                addItem(out, "minecraft:gold_ingot", 8, 6);
-            }
-            default -> {
-                addItem(out, "minecraft:diamond", 4, 14);
-                addItem(out, "minecraft:netherite_scrap", 1, 25);
-                addItem(out, "minecraft:emerald", 8, 10);
+        }
+        shuffle(eligible, rng);
+        int show = Math.min(5 + rng.nextInt(6), eligible.size());   // 5..10, capped at the pool size
+        for (int i = 0; i < show; i++) {
+            Line line = eligible.get(i);
+            int[] band = line.bands()[r];
+            int count = band[0] + (band[1] > band[0] ? rng.nextInt(band[1] - band[0] + 1) : 0);
+            ItemStack s = stack(line.id(), count);
+            if (!s.isEmpty()) {
+                out.add(new Article(s, line.price()));
             }
         }
     }
 
-    private static void addItem(List<Article> out, String id, int count, int cost) {
-        ItemStack s = stack(id, count);
-        if (!s.isEmpty()) {
-            out.add(new Article(s, cost));
-        }
-    }
+    /**
+     * One materials line: an item, a flat level price, and its quantity band per rarity (indexed by
+     * {@link Rarity#ordinal()} — COMMON, RARE, EPIC, LEGENDARY; {@code null} = not sold at that rarity,
+     * {@code {min,max}} = quantity range rolled at generation).
+     */
+    private record Line(String id, int price, int[][] bands) {}
 
-    private static void addPotion(List<Article> out, String potionId, int cost) {
-        Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation("minecraft", "potion"));
-        if (item == null) {
-            return;
-        }
-        ItemStack s = new ItemStack(item);
-        s.getOrCreateTag().putString("Potion", potionId);
-        out.add(new Article(s, cost));
-    }
+    private static final Line[] MATERIALS_POOL = {
+        // --- Chaos infusion (Born in Chaos) ---
+        new Line("born_in_chaos_v1:phantom_powder",     3, new int[][]{ {10, 18}, null,     null,     null    }),
+        new Line("born_in_chaos_v1:dark_rod",           4, new int[][]{ {4, 6},   {7, 12},  null,     null    }),
+        new Line("born_in_chaos_v1:fire_dust",          2, new int[][]{ {12, 20}, null,     null,     null    }),
+        new Line("born_in_chaos_v1:seedof_chaos",       8, new int[][]{ null,     {2, 4},   {5, 9},   null    }),
+        new Line("born_in_chaos_v1:krampus_horn",      12, new int[][]{ null,     {1, 2},   {2, 4},   {5, 6}  }),
+        new Line("born_in_chaos_v1:orbofthe_summoner", 13, new int[][]{ null,     null,     null,     {7, 9}  }),
+        // --- Vanilla infusion ---
+        new Line("minecraft:gold_ingot",                3, new int[][]{ {10, 18}, null,     null,     null    }),
+        new Line("minecraft:diamond",                   5, new int[][]{ {4, 6},   {7, 12},  null,     null    }),
+        new Line("minecraft:gold_block",                6, new int[][]{ {1, 2},   null,     null,     null    }),
+        new Line("minecraft:nether_star",              14, new int[][]{ null,     {1, 2},   {2, 4},   {5, 6}  }),
+        new Line("minecraft:golden_apple",              5, new int[][]{ null,     {2, 4},   null,     null    }),
+        new Line("minecraft:diamond_block",            10, new int[][]{ null,     null,     {2, 3},   null    }),
+        new Line("minecraft:enchanted_golden_apple",   14, new int[][]{ null,     null,     null,     {4, 5}  }),
+        // --- Yakurum infusion (Water LB) ---
+        new Line("yakurum:pearl",                       2, new int[][]{ {12, 20}, null,     null,     null    }),
+        new Line("yakurum:aquamarine",                  3, new int[][]{ {4, 6},   {7, 12},  null,     null    }),
+        new Line("yakurum:pearl_block",                 6, new int[][]{ {1, 2},   null,     null,     null    }),
+        new Line("yakurum:water_diamond",              14, new int[][]{ null,     {1, 2},   {2, 4},   {5, 6}  }),
+        new Line("yakurum:coral_crystal_block",         6, new int[][]{ null,     {2, 3},   null,     null    }),
+        new Line("yakurum:prismarine_gem_block",        8, new int[][]{ null,     null,     {3, 4},   null    }),
+        new Line("yakurum:aquamarine_block",            8, new int[][]{ null,     null,     null,     {5, 6}  }),
+        // --- Gear / progression materials ---
+        new Line("minecraft:end_portal_frame",          6, new int[][]{ {2, 2},   {6, 7},   {11, 12}, {12, 12} }),
+        new Line("minecraft:ender_eye",                 4, new int[][]{ {1, 1},   {2, 3},   {7, 9},   {12, 12} }),
+        new Line("minecraft:ender_pearl",               2, new int[][]{ {5, 5},   {6, 7},   {12, 12}, null    }),
+        new Line("minecraft:blaze_rod",                 3, new int[][]{ {1, 2},   {3, 4},   {6, 6},   null    }),
+        new Line("minecraft:netherite_ingot",           8, new int[][]{ {1, 3},   {6, 12},  null,     null    }),
+        new Line("minecraft:netherite_block",          20, new int[][]{ null,     null,     {2, 3},   {4, 5}  }),
+        new Line("minecraft:netherite_upgrade_smithing_template", 4, new int[][]{ {1, 1}, {1, 2}, null, null }),
+    };
 
     private static ItemStack infusedBlock(ResourceLocation blockId, int luck) {
         Item item = ForgeRegistries.ITEMS.getValue(blockId);   // block items share the block's id
@@ -159,12 +515,167 @@ public final class RewardPool {
         return s;
     }
 
-    private static ItemStack luckyTool(RandomSource rng) {
-        String[] tools = {"lucky_radar", "lucky_wand", "lucky_shield", "lucky_spawner", "lucky_totem", "lucky_hammer"};
-        String pick = tools[rng.nextInt(tools.length)];
-        Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation("luckytools", pick));
+    // =========================== TOOLS machine ===========================
+
+    /**
+     * Tools machine ({@link MachineType#TOOLS}): a boutique of UNIQUE gear — lucky tools, artifacts &
+     * relics (Artifacts / Relics / Confluence-Terraria), totem-style accessories (Yakurum), mobility
+     * pieces, Sophisticated Backpacks + upgrade modules. Unlike the materials machine, quantity is
+     * always 1 and the machine's RARITY gates the QUALITY of what's offered, not the amount. A machine
+     * shows 5–8 items drawn at random from its rarity's pool.
+     *
+     * <p>Lucky tools are a capped slot (user 2026-07-07): EPIC offers exactly ONE random lucky tool,
+     * LEGENDARY offers TWO distinct ones among Radar / Hammer / Ring / Belt — the rest of the 5–8 are
+     * filled from the rarity's non-tool pool. Backpacks come dyed a random cloth colour; the XP-pump
+     * module is bundled with its tank (Article.extra). Prices are placeholders, to tune by power.
+     */
+    private static void rollTools(List<Article> out, Rarity rarity, RandomSource rng) {
+        int total = 5 + rng.nextInt(4);            // 5..8 items per machine
+        int toolsAdded = 0;
+
+        // Capped lucky-tool slot.
+        if (rarity == Rarity.EPIC) {
+            ItemStack t = toolStack(ALL_LUCKY_TOOLS[rng.nextInt(ALL_LUCKY_TOOLS.length)]);
+            if (!t.isEmpty()) { out.add(new Article(t, 15)); toolsAdded++; }
+        } else if (rarity == Rarity.LEGENDARY) {
+            List<String> pick = new ArrayList<>(List.of(LEGENDARY_TOOLS));
+            shuffle(pick, rng);
+            for (int i = 0; i < Math.min(2, pick.size()); i++) {
+                ItemStack t = toolStack(pick.get(i));
+                if (!t.isEmpty()) { out.add(new Article(t, 16)); toolsAdded++; }
+            }
+        }
+
+        // Fill the rest from the rarity's non-tool pool.
+        List<ToolLine> pool = new ArrayList<>();
+        for (ToolLine line : TOOLS_POOL) {
+            if (line.rarity() == rarity && ForgeRegistries.ITEMS.containsKey(new ResourceLocation(line.id()))) {
+                pool.add(line);
+            }
+        }
+        shuffle(pool, rng);
+        int fill = Math.min(total - toolsAdded, pool.size());
+        for (int i = 0; i < fill; i++) {
+            ToolLine line = pool.get(i);
+            ItemStack stack = new ItemStack(ForgeRegistries.ITEMS.getValue(new ResourceLocation(line.id())));
+            if (line.randomColor()) {
+                applyRandomBackpackColor(stack, rng);
+            }
+            ItemStack extra = ItemStack.EMPTY;
+            if (line.extra() != null && ForgeRegistries.ITEMS.containsKey(new ResourceLocation(line.extra()))) {
+                extra = new ItemStack(ForgeRegistries.ITEMS.getValue(new ResourceLocation(line.extra())));
+            }
+            out.add(new Article(stack, extra, line.price()));
+        }
+    }
+
+    private static ItemStack toolStack(String name) {
+        Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation("luckytools", name));
         return item == null ? ItemStack.EMPTY : new ItemStack(item);
     }
+
+    /** Tint a Sophisticated Backpack a random cloth colour (harmless no-op if the NBT keys differ). */
+    private static void applyRandomBackpackColor(ItemStack stack, RandomSource rng) {
+        int colour = rng.nextInt(0xFFFFFF + 1);
+        stack.getOrCreateTag().putInt("clothColor", colour);
+        stack.getOrCreateTag().putInt("borderColor", colour);
+    }
+
+    private static final String[] ALL_LUCKY_TOOLS = {
+        "lucky_radar", "lucky_wand", "lucky_shield", "lucky_spawner",
+        "lucky_totem", "lucky_hammer", "lucky_ring", "lucky_belt"
+    };
+    private static final String[] LEGENDARY_TOOLS = {"lucky_radar", "lucky_hammer", "lucky_ring", "lucky_belt"};
+
+    /** One tools-machine line: item, the rarity it is stocked at, price, an optional bundled bonus item
+     *  ({@code extra}), and whether it is a backpack that should get a random cloth colour. Quantity is
+     *  always 1. */
+    private record ToolLine(String id, Rarity rarity, int price, String extra, boolean randomColor) {}
+
+    private static final ToolLine[] TOOLS_POOL = {
+        // Prices are flat-ish by item power, NOT by rarity tier: finding a rarer machine IS the reward,
+        // so a legendary piece is only slightly pricier than a common one (user 2026-07-07).
+        // ---------- COMMON ----------
+        new ToolLine("relics:bastion_ring",              Rarity.COMMON, 10, null, false),
+        new ToolLine("relics:roller_skates",             Rarity.COMMON, 10, null, false),
+        new ToolLine("relics:magma_walker",              Rarity.COMMON, 10, null, false),
+        new ToolLine("relics:aqua_walker",               Rarity.COMMON, 10, null, false),
+        new ToolLine("confluence:hand_drill",            Rarity.COMMON, 10, null, false),
+        new ToolLine("confluence:hand_warmer",           Rarity.COMMON, 10, null, false),
+        new ToolLine("confluence:flower_boots",          Rarity.COMMON, 10, null, false),
+        new ToolLine("artifacts:panic_necklace",         Rarity.COMMON, 10, null, false),
+        new ToolLine("artifacts:feral_claws",            Rarity.COMMON, 10, null, false),
+        new ToolLine("artifacts:whoopee_cushion",        Rarity.COMMON,  5, null, false),
+        new ToolLine("sophisticatedbackpacks:backpack",  Rarity.COMMON, 5, null, true),
+        new ToolLine("sophisticatedbackpacks:anvil_upgrade",    Rarity.COMMON, 2, null, false),
+        new ToolLine("sophisticatedbackpacks:crafting_upgrade", Rarity.COMMON, 2, null, false),
+        new ToolLine("artifacts:villager_hat",           Rarity.COMMON, 10, null, false),
+        new ToolLine("artifacts:lucky_scarf",            Rarity.COMMON, 12, null, false),
+        new ToolLine("artifacts:night_vision_goggles",   Rarity.COMMON, 10, null, false),
+        new ToolLine("confluence:aglet",                 Rarity.COMMON,  8, null, false),
+        new ToolLine("confluence:flashlight",            Rarity.COMMON,  8, null, false),
+        new ToolLine("confluence:fast_clock",            Rarity.COMMON,  8, null, false),
+        new ToolLine("artifacts:snowshoes",              Rarity.COMMON,  8, null, false),
+        // ---------- RARE ----------
+        new ToolLine("luckyxp:lucky_glasses",            Rarity.RARE, 12, null, false),
+        new ToolLine("artifacts:kitty_slippers",         Rarity.RARE, 10, null, false),
+        new ToolLine("artifacts:flame_pendant",          Rarity.RARE, 12, null, false),
+        new ToolLine("artifacts:charm_of_sinking",       Rarity.RARE, 10, null, false),
+        new ToolLine("artifacts:cloud_in_a_bottle",      Rarity.RARE, 10, null, false),
+        new ToolLine("relics:leather_belt",              Rarity.RARE, 10, null, false),
+        new ToolLine("relics:reflection_necklace",       Rarity.RARE, 12, null, false),
+        new ToolLine("confluence:sun_stone",             Rarity.RARE, 10, null, false),
+        new ToolLine("confluence:moon_stone",            Rarity.RARE, 10, null, false),
+        new ToolLine("confluence:magma_stone",           Rarity.RARE, 12, null, false),
+        new ToolLine("confluence:toolbox",               Rarity.RARE, 12, null, false),
+        new ToolLine("confluence:magiluminescence",      Rarity.RARE, 10, null, false),
+        new ToolLine("sophisticatedbackpacks:gold_backpack", Rarity.RARE, 5, null, true),
+        new ToolLine("sophisticatedbackpacks:advanced_feeding_upgrade", Rarity.RARE, 10, null, false),
+        new ToolLine("sophisticatedbackpacks:stack_upgrade_tier_3",     Rarity.RARE, 12, null, false),
+        new ToolLine("confluence:flipper",               Rarity.RARE, 10, null, false),
+        new ToolLine("confluence:lightning_boots",       Rarity.RARE, 14, null, false),
+        new ToolLine("artifacts:pickaxe_heater",         Rarity.RARE, 12, null, false),
+        new ToolLine("artifacts:rooted_boots",           Rarity.RARE, 10, null, false),
+        new ToolLine("artifacts:helium_flamingo",        Rarity.RARE, 12, null, false),
+        // ---------- EPIC ----------
+        new ToolLine("minecraft:totem_of_undying",       Rarity.EPIC, 12, null, false),
+        new ToolLine("artifacts:chorus_totem",           Rarity.EPIC, 14, null, false),
+        new ToolLine("artifacts:bunny_hoppers",          Rarity.EPIC, 12, null, false),
+        new ToolLine("artifacts:golden_hook",            Rarity.EPIC, 12, null, false),
+        new ToolLine("artifacts:cross_necklace",         Rarity.EPIC, 12, null, false),
+        new ToolLine("confluence:extendo_grip",          Rarity.EPIC, 12, null, false),
+        new ToolLine("confluence:warrior_emblem",        Rarity.EPIC, 12, null, false),
+        new ToolLine("confluence:putrid_scent",          Rarity.EPIC, 10, null, false),
+        new ToolLine("relics:enders_hand",               Rarity.EPIC, 12, null, false),
+        new ToolLine("minecraft:elytra",                 Rarity.EPIC, 14, null, false),
+        new ToolLine("fuze_relics:jetpack_playbutton_chestplate", Rarity.EPIC, 14, null, false),
+        new ToolLine("fuze_relics:grapplin_hook",        Rarity.EPIC, 12, null, false),
+        new ToolLine("relics:space_dissector",           Rarity.EPIC, 14, null, false),
+        new ToolLine("confluence:band_of_regeneration",  Rarity.EPIC, 12, null, false),
+        new ToolLine("sophisticatedbackpacks:diamond_backpack", Rarity.EPIC, 5, null, true),
+        new ToolLine("sophisticatedbackpacks:xp_pump_upgrade",  Rarity.EPIC, 12, "sophisticatedbackpacks:tank_upgrade", false),
+        new ToolLine("artifacts:antidote_vessel",        Rarity.EPIC, 12, null, false),
+        new ToolLine("confluence:ranger_emblem",         Rarity.EPIC, 12, null, false),
+        new ToolLine("confluence:brain_of_confusion",    Rarity.EPIC, 14, null, false),
+        new ToolLine("confluence:shark_tooth_necklace",  Rarity.EPIC, 12, null, false),
+        new ToolLine("confluence:terraspark_boots",      Rarity.EPIC, 15, null, false),
+        new ToolLine("artifacts:snorkel",                Rarity.EPIC, 10, null, false),
+        // ---------- LEGENDARY ----------
+        new ToolLine("yakurum:pandilla_totem",           Rarity.LEGENDARY, 15, null, false),
+        new ToolLine("yakurum:pearl_necklace",           Rarity.LEGENDARY, 14, null, false),
+        new ToolLine("artifacts:crystal_heart",          Rarity.LEGENDARY, 15, null, false),
+        new ToolLine("artifacts:vampiric_glove",         Rarity.LEGENDARY, 14, null, false),
+        new ToolLine("confluence:frozen_turtle_shell",   Rarity.LEGENDARY, 14, null, false),
+        new ToolLine("confluence:bundle_of_horseshoe_balloons", Rarity.LEGENDARY, 12, null, false),
+        new ToolLine("confluence:demon_heart",           Rarity.LEGENDARY, 15, null, false),
+        new ToolLine("yakurum:angel_wings",              Rarity.LEGENDARY, 15, null, false),
+        new ToolLine("sophisticatedbackpacks:netherite_backpack", Rarity.LEGENDARY, 5, null, true),
+        new ToolLine("confluence:ankh_shield",           Rarity.LEGENDARY, 16, null, false),
+        new ToolLine("confluence:worm_scarf",            Rarity.LEGENDARY, 15, null, false),
+        new ToolLine("confluence:celestial_stone",       Rarity.LEGENDARY, 15, null, false),
+        new ToolLine("yakurum:king_triton_amulet",       Rarity.LEGENDARY, 15, null, false),
+        new ToolLine("sophisticatedbackpacks:advanced_alchemy_upgrade", Rarity.LEGENDARY, 12, null, false),
+    };
 
     private static ItemStack stack(String id, int count) {
         Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(id));
