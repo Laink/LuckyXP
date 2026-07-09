@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "luckyxp:item/lucky_experience_bottle"
+  }
+}

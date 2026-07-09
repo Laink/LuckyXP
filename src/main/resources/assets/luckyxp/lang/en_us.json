@@ -4,7 +4,9 @@
   "block.luckyxp.vending_machine_ores": "Ore Vending Machine",
   "block.luckyxp.vending_machine_tools": "Tools Vending Machine",
   "itemGroup.luckyxp": "Lucky XP",
+  "entity.luckyxp.lucky_merchant": "Lucky Merchant",
   "container.luckyxp.vending_machine": "Vending Machine",
   "item.luckyxp.lucky_glasses": "Lucky Glasses",
+  "item.luckyxp.lucky_experience_bottle": "Lucky Experience Bottle",
   "tooltip.luckyxp.glasses.desc": "Reveals the Luck of nearby lucky blocks while worn"
 }

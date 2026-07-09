@@ -55,11 +55,25 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         return stock;
     }
 
-    /** Roll the stock once, on first interaction, from the machine's type + rarity. */
+    /**
+     * Roll the stock once, on first interaction, from the machine's type + rarity. Once rolled it
+     * never changes: every line is a single purchase and there is NO restock (user 2026-07-09 — a
+     * re-rollable legendary machine would hand out its lucky tools in a loop). A machine is a
+     * one-time find; what it stocked the day it was found is all it will ever sell.
+     */
     public void ensureStock(Level level) {
         if (!rolled) {
             stock = RewardPool.roll(getMachineType(), rarity, level.random);
             rolled = true;
+            setChanged();
+        }
+    }
+
+    /** Mark one line as bought — permanently (single-purchase lines, user 2026-07-09). The menu's
+     *  list IS this list, so the change is visible to every open menu on the server side. */
+    public void markSold(int index) {
+        if (index >= 0 && index < stock.size() && !stock.get(index).sold()) {
+            stock.set(index, stock.get(index).asSold());
             setChanged();
         }
     }
@@ -99,6 +113,9 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
                 entry.put("extra", a.extra().save(new CompoundTag()));
             }
             entry.putInt("cost", a.costLevels());
+            if (a.sold()) {
+                entry.putBoolean("sold", true);
+            }
             list.add(entry);
         }
         tag.put("Stock", list);
@@ -117,7 +134,7 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
             CompoundTag entry = list.getCompound(i);
             ItemStack item = ItemStack.of(entry.getCompound("item"));
             ItemStack extra = entry.contains("extra") ? ItemStack.of(entry.getCompound("extra")) : ItemStack.EMPTY;
-            stock.add(new Article(item, extra, entry.getInt("cost")));
+            stock.add(new Article(item, extra, entry.getInt("cost"), entry.getBoolean("sold")));
         }
     }
 

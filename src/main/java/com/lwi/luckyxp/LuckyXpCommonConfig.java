@@ -35,6 +35,7 @@ public final class LuckyXpCommonConfig {
         public final ForgeConfigSpec.IntValue windowEnd;
 
         public final ForgeConfigSpec.IntValue standChance;
+        public final ForgeConfigSpec.BooleanValue debugFullStock;
         public final ForgeConfigSpec.IntValue weightCommon;
         public final ForgeConfigSpec.IntValue weightRare;
         public final ForgeConfigSpec.IntValue weightEpic;
@@ -70,6 +71,10 @@ public final class LuckyXpCommonConfig {
                             "20 minutes and is worth ~283 Lucky XP of exploration -- exactly the price of a dear line.",
                             "Lower it while testing (60 puts one almost everywhere); the shipped value is what matters.")
                     .defineInRange("standChance", 500, 1, 100000);
+            debugFullStock = b.comment(
+                            "TESTING ONLY. When true, every machine lists its ENTIRE rarity pool instead of the",
+                            "usual 7-10 random lines — so you can see all items at once. Leave false for real play.")
+                    .define("debugFullStock", false);
             weightCommon = b.comment("Relative weight of a COMMON machine when a stand generates (weights, not percents; 0 disables the rarity).")
                     .defineInRange("weightCommon", 59, 0, 1000);
             weightRare = b.comment("Relative weight of a RARE machine.")
@@ -90,15 +95,23 @@ public final class LuckyXpCommonConfig {
             baseXp = b.comment(
                             "Lucky XP granted by ANY lucky block, whatever it drops and whatever its Luck.",
                             "Silk-touching one grants nothing (it is picked up, not opened).",
-                            "Reference point: at 4 XP, with the pack's natural spawn of one lucky block per 10.1",
-                            "chunks, a stand at standChance=500 is worth ~200 XP of exploration. Raising this makes",
-                            "every machine price cheaper, in proportion.")
+                            "This is the ONLY pace control: the level curve is vanilla's, and machine prices are in",
+                            "levels, so scaling the curve by K would be exactly the same as dividing baseXp by K.",
+                            "Calibrated on a measured session (119 lucky blocks in 49 min, one block per 10.1 chunks):",
+                            "at 4, a run reaches level 14 in ~29 min, and a stand (standChance=500) is worth ~199 XP --",
+                            "level 11, so the player must CHOOSE a line rather than afford the machine's best every",
+                            "time. A lucky-block pack hands out far more XP than vanilla ever does; this is deliberately",
+                            "slower than it looks. Raising it makes every machine price cheaper, in proportion.")
                     .defineInRange("baseXp", 4, 0, 1000);
             legendaryMultiplier = b.comment(
                             "Multiplies the break's Lucky XP when the drop it rolled is a LEGENDARY one.",
                             "The reward is the only thing that changes the payout: every lucky block is worth the",
                             "same until its drop turns out legendary. Stacks multiplicatively with an XP event's",
-                            "own multiplier. Set to 1 to disable the bonus.")
+                            "own multiplier. Set to 1 to disable the bonus.",
+                            "Measured at ~3.3% of breaks (4 legendaries in 121 blocks), so this is worth about +3% of",
+                            "a run's total XP: it is a moment of celebration, not an income. baseXp is calibrated as",
+                            "if it did not exist. Luck still pays, but indirectly -- an infused block pushes the roll",
+                            "up the drop table, hence towards the legendary entries, hence towards this bonus.")
                     .defineInRange("legendaryMultiplier", 2, 1, 100);
             legendaryXpDelayTicks = b.comment(
                             "Ticks to wait before dropping the legendary bonus XP. The legendary suspense wrap in",

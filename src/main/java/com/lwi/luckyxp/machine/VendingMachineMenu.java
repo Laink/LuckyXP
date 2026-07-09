@@ -2,9 +2,12 @@ package com.lwi.luckyxp.machine;
 
 import com.lwi.luckyxp.Registration;
 import com.lwi.luckyxp.api.LuckyXpApi;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -49,6 +52,14 @@ public class VendingMachineMenu extends AbstractContainerMenu {
         return stock;
     }
 
+    /** Client-side optimistic SOLD mark after a locally-valid click; the server stays authoritative
+     *  (its own copy is marked through the block entity, and re-opening resyncs from it). */
+    public void markSoldLocal(int index) {
+        if (index >= 0 && index < stock.size()) {
+            stock.set(index, stock.get(index).asSold());
+        }
+    }
+
     public MachineType getMachineType() {
         return type;
     }
@@ -72,18 +83,27 @@ public class VendingMachineMenu extends AbstractContainerMenu {
             return false;
         }
         Article article = stock.get(buttonId);
-        if (article.stack().isEmpty()) {
+        if (article.stack().isEmpty() || article.sold()) {      // every line is a single purchase
             return false;
         }
-        if (LuckyXpApi.getLevel(serverPlayer) < article.costLevels()) {
+        // No room, no sale: paying for an item that lands on the ground is how hardcore items burn.
+        if (!canFit(serverPlayer, article)) {
+            serverPlayer.displayClientMessage(
+                    Component.literal("Inventory full!").withStyle(ChatFormatting.RED), true);
             return false;
         }
-        if (!LuckyXpApi.spendLevels(serverPlayer, article.costLevels())) {
-            return false;
+        // Creative buys for free (the vanilla-anvil convention) — for testing and map-making.
+        if (!serverPlayer.getAbilities().instabuild) {
+            if (LuckyXpApi.getLevel(serverPlayer) < article.costLevels()) {
+                return false;
+            }
+            if (!LuckyXpApi.spendLevels(serverPlayer, article.costLevels())) {
+                return false;
+            }
         }
         ItemStack give = article.stack().copy();
         if (!serverPlayer.getInventory().add(give)) {
-            serverPlayer.drop(give, false);
+            serverPlayer.drop(give, false);                     // canFit raced: never lose the purchase
         }
         if (!article.extra().isEmpty()) {                       // bundled bonus (e.g. XP-pump's tank)
             ItemStack bonus = article.extra().copy();
@@ -91,7 +111,29 @@ public class VendingMachineMenu extends AbstractContainerMenu {
                 serverPlayer.drop(bonus, false);
             }
         }
+        // Mark the line SOLD on the block entity — the server-side menu list IS the BE's list, so
+        // this menu (and any other open one) sees it immediately, and it persists.
+        access.execute((level, pos) -> {
+            if (level.getBlockEntity(pos) instanceof VendingMachineBlockEntity be) {
+                be.markSold(buttonId);
+            }
+        });
+        // The trade screen has no player-inventory slots, so the active menu never syncs them — the
+        // item would only "appear" on close. Broadcast the inventory menu explicitly instead.
+        serverPlayer.inventoryMenu.broadcastChanges();
         return true;
+    }
+
+    /** Whether the article (stack + bonus) fits the player's 36 main slots, simulated on a copy. */
+    private static boolean canFit(ServerPlayer player, Article article) {
+        SimpleContainer sim = new SimpleContainer(36);
+        for (int i = 0; i < 36; i++) {
+            sim.setItem(i, player.getInventory().items.get(i).copy());
+        }
+        if (!sim.addItem(article.stack().copy()).isEmpty()) {
+            return false;
+        }
+        return article.extra().isEmpty() || sim.addItem(article.extra().copy()).isEmpty();
     }
 
     @Override

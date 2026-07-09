@@ -65,7 +65,15 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
                 LuckyXpCommonConfig.COMMON.weightEpic.get(),
                 LuckyXpCommonConfig.COMMON.weightLegendary.get()});
         MachineType type = MachineType.values()[rand.nextInt(MachineType.values().length)];
+        return build(level, o, rarity, type);
+    }
 
+    /**
+     * Builds the full stand — structure, machine (rarity applied) and bound merchant. Shared by
+     * worldgen ({@link #place}) and the dev command {@code /luckyevent stand}, which skips the
+     * density roll above.
+     */
+    public static boolean build(WorldGenLevel level, BlockPos o, Rarity rarity, MachineType type) {
         BlockState air = Blocks.AIR.defaultBlockState();
         BlockState floor = Blocks.STONE_BRICKS.defaultBlockState();
         BlockState fence = Blocks.OAK_FENCE.defaultBlockState();
@@ -161,6 +169,17 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
         if (level.getBlockEntity(mPos) instanceof VendingMachineBlockEntity be) {
             be.setRarity(rarity);
         }
+
+        // 11. the merchant, in the left bay by his lectern, facing the front like his machine. He
+        // sells the six services (reroll, convert, luck, heal, repair) — see MerchantMenu.
+        com.lwi.luckyxp.entity.LuckyMerchant merchant =
+                Registration.LUCKY_MERCHANT.get().create(level.getLevel());
+        if (merchant != null) {
+            BlockPos sPos = o.offset(3, 1, 1);
+            merchant.moveTo(sPos.getX() + 0.5, sPos.getY(), sPos.getZ() + 0.5, 180.0F, 0.0F);
+            merchant.setMachinePos(mPos);
+            level.addFreshEntity(merchant);
+        }
         LOGGER.info("Vending stand placed: {} {} at {} {} {}", rarity, type, o.getX(), o.getY(), o.getZ());
         return true;
     }
@@ -173,7 +192,7 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
      * placement heightmap always resolves the world surface. Rejecting returns false — the rarity roll
      * simply tries elsewhere another chunk.
      */
-    private static boolean suitable(WorldGenLevel level, BlockPos o) {
+    public static boolean suitable(WorldGenLevel level, BlockPos o) {
         int min = Integer.MAX_VALUE;
         int max = Integer.MIN_VALUE;
         for (int dx = 0; dx <= 4; dx++) {

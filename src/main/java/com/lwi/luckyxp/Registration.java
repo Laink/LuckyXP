@@ -53,9 +53,13 @@ public final class Registration {
     static {
         for (MachineType t : MachineType.values()) {
             String name = "vending_machine_" + t.id;
+            // Unbreakable and blast-proof, bedrock-style (user 2026-07-09: a machine stays where the
+            // world put it, whatever happens — its stock is a one-time, per-machine treasure, and the
+            // upcoming merchant sells the reroll). destroySpeed -1 also stops pistons; survival cannot
+            // mine it, creative still breaks it instantly. Wither/dragon immunity via the block tags.
             RegistryObject<Block> block = BLOCKS.register(name,
                     () -> new VendingMachineBlock(BlockBehaviour.Properties.of()
-                            .mapColor(MapColor.METAL).strength(3.5F).requiresCorrectToolForDrops().noOcclusion(), t));
+                            .mapColor(MapColor.METAL).strength(-1.0F, 3600000.0F).noOcclusion(), t));
             MACHINES.put(t, block);
             MACHINE_ITEMS.put(t, ITEMS.register(name, () -> new BlockItem(block.get(), new Item.Properties())));
         }
@@ -71,6 +75,15 @@ public final class Registration {
     public static final RegistryObject<MenuType<VendingMachineMenu>> VENDING_MACHINE_MENU =
             MENUS.register("vending_machine", () -> IForgeMenuType.create(VendingMachineMenu::new));
 
+    public static final RegistryObject<MenuType<com.lwi.luckyxp.machine.MerchantMenu>> MERCHANT_MENU =
+            MENUS.register("merchant", () -> IForgeMenuType.create(com.lwi.luckyxp.machine.MerchantMenu::new));
+
+    /** The stand's service NPC (see {@link com.lwi.luckyxp.entity.LuckyMerchant}). */
+    public static final RegistryObject<EntityType<com.lwi.luckyxp.entity.LuckyMerchant>> LUCKY_MERCHANT =
+            ENTITIES.register("lucky_merchant",
+                    () -> EntityType.Builder.of(com.lwi.luckyxp.entity.LuckyMerchant::new, MobCategory.CREATURE)
+                            .sized(0.6F, 1.95F).clientTrackingRange(10).build("lucky_merchant"));
+
     /** Curios head item: reveals the Luck holograms over nearby lucky blocks while worn. */
     public static final RegistryObject<Item> LUCKY_GLASSES = ITEMS.register("lucky_glasses",
             () -> new LuckyGlassesItem(new Item.Properties().stacksTo(1)));
@@ -78,6 +91,16 @@ public final class Registration {
     public static final RegistryObject<EntityType<LuckyXpOrb>> LUCKY_XP_ORB = ENTITIES.register("lucky_xp_orb",
             () -> EntityType.Builder.<LuckyXpOrb>of(LuckyXpOrb::new, MobCategory.MISC)
                     .sized(0.5F, 0.5F).clientTrackingRange(6).updateInterval(20).build("lucky_xp_orb"));
+
+    /** A blue xp bottle that bursts into Lucky XP orbs (see {@link com.lwi.luckyxp.item.LuckyExperienceBottleItem}). */
+    public static final RegistryObject<Item> LUCKY_EXPERIENCE_BOTTLE = ITEMS.register("lucky_experience_bottle",
+            () -> new com.lwi.luckyxp.item.LuckyExperienceBottleItem(new Item.Properties()));
+
+    public static final RegistryObject<EntityType<com.lwi.luckyxp.entity.ThrownLuckyBottle>> THROWN_LUCKY_BOTTLE =
+            ENTITIES.register("thrown_lucky_bottle",
+                    () -> EntityType.Builder.<com.lwi.luckyxp.entity.ThrownLuckyBottle>of(
+                                    com.lwi.luckyxp.entity.ThrownLuckyBottle::new, MobCategory.MISC)
+                            .sized(0.25F, 0.25F).clientTrackingRange(4).updateInterval(10).build("thrown_lucky_bottle"));
 
     public static final RegistryObject<CreativeModeTab> TAB = TABS.register("luckyxp", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.luckyxp"))
@@ -87,12 +110,23 @@ public final class Registration {
                     output.accept(MACHINE_ITEMS.get(t).get());
                 }
                 output.accept(LUCKY_GLASSES.get());
+                output.accept(LUCKY_EXPERIENCE_BOTTLE.get());
             })
             .build());
 
     private Registration() {}
 
+    /** Mod-bus: base attributes for the merchant (a plain immobile mob). */
+    public static void onEntityAttributes(net.minecraftforge.event.entity.EntityAttributeCreationEvent event) {
+        event.put(LUCKY_MERCHANT.get(),
+                net.minecraft.world.entity.PathfinderMob.createMobAttributes()
+                        .add(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH, 20.0D)
+                        .add(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED, 0.0D)
+                        .build());
+    }
+
     public static void init(IEventBus modBus) {
+        modBus.addListener(Registration::onEntityAttributes);
         BLOCKS.register(modBus);
         ITEMS.register(modBus);
         BLOCK_ENTITIES.register(modBus);

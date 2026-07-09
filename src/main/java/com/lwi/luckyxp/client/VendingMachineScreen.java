@@ -28,6 +28,14 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
     private int scrollRow;
     private boolean draggingThumb;
 
+    // Purchase feedback (client-only, wall-clock timed so it is framerate-independent).
+    private int flashRow = -1;
+    private long flashUntilMs;
+    private String toast;
+    private long toastUntilMs;
+    private static final long FLASH_MS = 450L;
+    private static final long TOAST_MS = 1600L;
+
     public VendingMachineScreen(VendingMachineMenu menu, Inventory inv, Component title) {
         super(menu, inv, title);
         this.L = VendingLayout.load();
@@ -75,6 +83,48 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
         renderFooter(g);
         renderScanlines(g, pt);
         renderHoverTooltip(g, mouseX, mouseY);
+        renderToast(g);                                     // drawn last: on top of the dim overlay
+    }
+
+    /** A bold message (e.g. "INVENTORY FULL") centred over the panel, above everything else, so it is
+     *  never lost behind the screen's dim background. Fades over its last third, but is cut while still
+     *  clearly visible (alpha never drops near 0) — a near-transparent plate + font flickers otherwise. */
+    private void renderToast(GuiGraphics g) {
+        if (toast == null) {
+            return;
+        }
+        long left = toastUntilMs - System.currentTimeMillis();
+        if (left <= 90L) {                                  // cut before the fade reaches flicker territory
+            toast = null;
+            return;
+        }
+        int alpha = (int) Math.min(255, Math.max(70, left * 3 * 255 / TOAST_MS));   // solid, then fade to a floor of 70
+        int cx = leftPos + L.panelW / 2, cy = topPos + L.panelH / 2 - 4;
+        int w = font.width(toast);
+        int x0 = cx - w / 2 - 6, x1 = cx + w / 2 + 6, y0 = cy - 4, y1 = cy + font.lineHeight + 4;
+        int edge = (alpha << 24) | 0xFF5555;
+        g.fill(x0, y0, x1, y1, (alpha << 24) | 0x200000);   // translucent red plate
+        g.fill(x0, y0, x1, y0 + 1, edge);                   // top
+        g.fill(x0, y1 - 1, x1, y1, edge);                   // bottom
+        g.fill(x0, y0, x0 + 1, y1, edge);                   // left
+        g.fill(x1 - 1, y0, x1, y1, edge);                   // right
+        g.drawString(this.font, toast, cx - w / 2, cy + 1, (alpha << 24) | 0xFF6060, false);
+    }
+
+    private void flash(int row) {
+        flashRow = row;
+        flashUntilMs = System.currentTimeMillis() + FLASH_MS;
+    }
+
+    /** Whether the given row should be tinted red this frame (fast blink while the flash lasts). */
+    private boolean isFlashing(int idx) {
+        return idx == flashRow && System.currentTimeMillis() < flashUntilMs
+                && (System.currentTimeMillis() / 120L) % 2L == 0L;
+    }
+
+    private void toast(String text) {
+        toast = text;
+        toastUntilMs = System.currentTimeMillis() + TOAST_MS;
     }
 
     @Override
@@ -112,8 +162,12 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
             }
             Article a = stock.get(idx);
             int rowY = topPos + L.listTop + i * L.rowH;
-            boolean afford = level >= a.costLevels();
-            if (idx == hovered) {
+            boolean sold = a.sold();
+            // Creative buys everything free (like the vanilla anvil), so nothing is ever locked there.
+            boolean afford = !sold && (isCreative() || level >= a.costLevels());
+            if (isFlashing(idx)) {
+                g.fill(listLeft, rowY, listRight, rowY + L.rowH - 1, 0x66FF3030);   // rejected: red blink
+            } else if (idx == hovered && !sold) {
                 g.fill(listLeft, rowY, listRight, rowY + L.rowH - 1, L.cHover);
             }
             ItemStack stack = a.stack();
@@ -122,7 +176,7 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
             g.renderItem(stack, ix, iy);
             g.renderItemDecorations(this.font, stack, ix, iy);
 
-            String cost = a.costLevels() + " lvl";
+            String cost = sold ? "SOLD" : a.costLevels() + " lvl";
             int costX = listRight - font.width(cost) - L.costRightPad;
             int textY = rowY + L.textYOff;
 
@@ -133,7 +187,12 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
                     costX - (leftPos + L.nameX) - 8);
             g.drawString(this.font, name, leftPos + L.nameX, textY, afford ? L.cTxt : L.cTxtDim, false);
             g.drawString(this.font, cost, costX, textY, afford ? L.cTxt : L.cTxtLock, false);
-            if (!afford) {
+            if (sold) {
+                // Single-purchase line already bought: strike the name through (brightness-only
+                // feedback, consistent with the colorblind rule above).
+                int lineY = textY + font.lineHeight / 2 - 1;
+                g.fill(leftPos + L.nameX - 1, lineY, leftPos + L.nameX + font.width(name) + 1, lineY + 1, L.cTxtLock);
+            } else if (!afford) {
                 drawLock(g, costX - 11, textY - 1, L.cTxtLock);
             }
         }
@@ -264,9 +323,19 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
             int idx = rowAt((int) mouseX, (int) mouseY);
             if (idx >= 0) {
                 Article a = menu.getStock().get(idx);
-                if (ClientXpCache.level >= a.costLevels()) {
-                    buy(idx);
-                    playClick(1.2F);
+                if (a.sold()) {
+                    flash(idx);
+                    playClick(0.6F);
+                } else if (isCreative() || ClientXpCache.level >= a.costLevels()) {
+                    if (clientCanFit(a)) {
+                        buy(idx);
+                        menu.markSoldLocal(idx);                // immediate SOLD feedback; server is authoritative
+                        playPurchase();                         // the cash-register "cha-ching"
+                    } else {
+                        flash(idx);
+                        toast("INVENTORY FULL");                // on top of the dim overlay, not the actionbar
+                        playClick(0.6F);
+                    }
                 } else {
                     playClick(0.6F);
                 }
@@ -274,6 +343,27 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /** Creative mode buys everything for free — mirror of the server-side instabuild bypass. */
+    private boolean isCreative() {
+        return minecraft != null && minecraft.player != null && minecraft.player.getAbilities().instabuild;
+    }
+
+    /** Client-side mirror of the menu's canFit: simulate the article landing in the 36 main slots,
+     *  so a full inventory is refused (and explained) instantly instead of failing silently. */
+    private boolean clientCanFit(Article a) {
+        if (minecraft == null || minecraft.player == null) {
+            return true;                                    // no player to check: let the server decide
+        }
+        net.minecraft.world.SimpleContainer sim = new net.minecraft.world.SimpleContainer(36);
+        for (int i = 0; i < 36; i++) {
+            sim.setItem(i, minecraft.player.getInventory().items.get(i).copy());
+        }
+        if (!sim.addItem(a.stack().copy()).isEmpty()) {
+            return false;
+        }
+        return a.extra().isEmpty() || sim.addItem(a.extra().copy()).isEmpty();
     }
 
     @Override
@@ -310,6 +400,18 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
         if (minecraft != null) {
             minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, pitch));
         }
+    }
+
+    /** A proper "cha-ching": two bright amethyst chimes an octave apart, plus the XP-orb pickup blip
+     *  underneath for the transaction feel. Played only on a successful purchase. */
+    private void playPurchase() {
+        if (minecraft == null) {
+            return;
+        }
+        var sm = minecraft.getSoundManager();
+        sm.play(SimpleSoundInstance.forUI(SoundEvents.AMETHYST_BLOCK_CHIME, 1.2F, 0.9F));
+        sm.play(SimpleSoundInstance.forUI(SoundEvents.AMETHYST_BLOCK_CHIME, 1.8F, 0.7F));
+        sm.play(SimpleSoundInstance.forUI(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.4F, 0.4F));
     }
 
     // ---- helpers ----

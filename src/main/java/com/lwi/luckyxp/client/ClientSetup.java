@@ -21,12 +21,18 @@ public final class ClientSetup {
 
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
-        event.enqueueWork(() -> MenuScreens.register(Registration.VENDING_MACHINE_MENU.get(), VendingMachineScreen::new));
+        event.enqueueWork(() -> {
+            MenuScreens.register(Registration.VENDING_MACHINE_MENU.get(), VendingMachineScreen::new);
+            MenuScreens.register(Registration.MERCHANT_MENU.get(), MerchantScreen::new);
+        });
     }
 
     @SubscribeEvent
     public static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(Registration.LUCKY_XP_ORB.get(), LuckyXpOrbRenderer::new);
+        event.registerEntityRenderer(Registration.LUCKY_MERCHANT.get(), LuckyMerchantRenderer::new);
+        event.registerEntityRenderer(Registration.THROWN_LUCKY_BOTTLE.get(),
+                ctx -> new net.minecraft.client.renderer.entity.ThrownItemRenderer<>(ctx));
     }
 
     /** Tint the screen LED (tintindex 0) by the machine's rarity. The LED is on the UPPER half; the

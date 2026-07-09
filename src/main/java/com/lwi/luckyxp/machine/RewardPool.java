@@ -1,6 +1,7 @@
 package com.lwi.luckyxp.machine;
 
 import com.lwi.luckytweaks.api.LuckyTweaksApi;
+import com.lwi.luckyxp.LuckyXpCommonConfig;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.resources.ResourceLocation;
@@ -25,6 +26,14 @@ import java.util.Map;
 public final class RewardPool {
     private RewardPool() {}
 
+    /** How many lines to show: 7-10 random, or the whole pool when {@code debugFullStock} is on (test). */
+    private static int drawCount(int poolSize, RandomSource rng) {
+        if (LuckyXpCommonConfig.COMMON.debugFullStock.get()) {
+            return poolSize;
+        }
+        return Math.min(7 + rng.nextInt(4), poolSize);
+    }
+
     public static List<Article> roll(MachineType type, Rarity rarity, RandomSource rng) {
         List<Article> out = new ArrayList<>();
         switch (type) {
@@ -43,7 +52,7 @@ public final class RewardPool {
     /**
      * Consumables machine ({@link MachineType#POTIONS} — it keeps its potion screen art): food, buff
      * items and the three named potions of the lucky blocks. Same economy as the materials machine —
-     * flat per-line price, quantity grows with rarity, 5–10 lines drawn at random from the rarity's pool.
+     * flat per-line price, quantity grows with rarity, 7–10 lines drawn at random from the rarity's pool.
      *
      * <p>{@link #customPotion} rebuilds those three potions exactly as the lucky blocks do — same item,
      * colour, name, and the same effect roll (the mod's {@code #luckyPotionEffects} template and the
@@ -60,7 +69,7 @@ public final class RewardPool {
             }
         }
         shuffle(pool, rng);
-        int show = Math.min(5 + rng.nextInt(6), pool.size());       // 5..10 lines
+        int show = drawCount(pool.size(), rng);
         for (int i = 0; i < show; i++) {
             Cons c = pool.get(i);
             int[] band = c.bands()[r];
@@ -71,11 +80,11 @@ public final class RewardPool {
                     continue;
                 }
                 ItemStack second = count >= 2 ? customPotion(c.ids()[0], rng) : ItemStack.EMPTY;
-                out.add(new Article(first, second, c.price()));     // potions stack to 1: the 2nd rides as bonus
+                out.add(new Article(first, second, c.prices()[r]));  // potions stack to 1: the 2nd rides as bonus
             } else {
                 ItemStack s = stack(pickPresentId(c.ids(), rng), count);
                 if (!s.isEmpty()) {
-                    out.add(new Article(s, c.price()));
+                    out.add(new Article(s, c.prices()[r]));
                 }
             }
         }
@@ -105,9 +114,12 @@ public final class RewardPool {
         return present.isEmpty() ? ids[0] : present.get(rng.nextInt(present.size()));
     }
 
-    /** One consumables line: an item (or a group, one member picked per roll), a flat price, and its
-     *  quantity band per rarity. An id starting with {@code @} is one of the three custom potions. */
-    private record Cons(String[] ids, int price, int[][] bands) {}
+    /** One consumables line: an item (or a group, one member picked per roll), its level price PER
+     *  RARITY (indexed by {@link Rarity#ordinal()}, 0 where not sold), and its quantity band per
+     *  rarity. Prices are per rarity since the tier-list pass (user 2026-07-09): the same article may
+     *  cost a little more — or less, deliberately — in a rarer machine. An id starting with {@code @}
+     *  is one of the NBT-built custom potions. */
+    private record Cons(String[] ids, int[] prices, int[][] bands) {}
 
     private static final String[] BIC_CANDY = {
         "born_in_chaos_v1:mint_candy", "born_in_chaos_v1:holiday_candy",
@@ -118,47 +130,50 @@ public final class RewardPool {
         "minecraft:cooked_mutton", "minecraft:cooked_rabbit"
     };
 
+    // Prices from the user's tier-list pass (2026-07-09, ranges C 3-11 / R 5-15 / E 10-17 / L 11-17).
+    // Deliberate inversions are design: a rarer machine often sells the same line CHEAPER and bigger
+    // (finding it is the reward) — e.g. the named potions at 16 Epic vs 13 Legendary for two bottles.
     private static final Cons[] CONSUMABLES = {
         // ---------- food ----------
-        new Cons(new String[]{"minecraft:golden_apple"},            3, new int[][]{ {2,4},  {6,8},   null,  null   }),
-        new Cons(new String[]{"minecraft:enchanted_golden_apple"},  8, new int[][]{ {1,1},  {2,3},   {4,5}, {7,8}  }),
-        new Cons(new String[]{"minecraft:golden_carrot"},           3, new int[][]{ {5,10}, {10,20}, null,  null   }),
-        new Cons(new String[]{"yakurum:golden_fish"},               3, new int[][]{ {1,3},  null,    null,  null   }),
-        new Cons(new String[]{"kubejs:cheesecake_a_la_merde"},      2, new int[][]{ {1,1},  null,    null,  null   }),
-        new Cons(new String[]{"fuze_relics:blue_cord"},             2, new int[][]{ {5,10}, {10,15}, null,  null   }),
-        new Cons(BIC_CANDY,                                         2, new int[][]{ {2,4},  {6,8},   null,  null   }),
+        new Cons(new String[]{"minecraft:golden_apple"},           new int[]{ 8, 10,  0,  0}, new int[][]{ {2,4},  {6,8},   null,  null   }),
+        new Cons(new String[]{"minecraft:enchanted_golden_apple"}, new int[]{11, 13, 14, 12}, new int[][]{ {1,1},  {2,3},   {4,5}, {6,7}  }),
+        new Cons(new String[]{"minecraft:golden_carrot"},          new int[]{ 4,  8,  0,  0}, new int[][]{ {5,10}, {10,20}, null,  null   }),
+        new Cons(new String[]{"yakurum:golden_fish"},              new int[]{ 7,  0,  0,  0}, new int[][]{ {1,3},  null,    null,  null   }),
+        new Cons(new String[]{"kubejs:cheesecake_a_la_merde"},     new int[]{ 4,  0,  0,  0}, new int[][]{ {1,1},  null,    null,  null   }),
+        new Cons(new String[]{"fuze_relics:blue_cord"},            new int[]{ 5,  6,  0,  0}, new int[][]{ {5,10}, {10,15}, null,  null   }),
+        new Cons(BIC_CANDY,                                        new int[]{ 6,  7,  0,  0}, new int[][]{ {2,4},  {6,8},   null,  null   }),
         new Cons(new String[]{"born_in_chaos_v1:magical_holiday_candy"},
-                                                                    3, new int[][]{ {4,5},  {10,10}, {20,20}, null }),
-        new Cons(COOKED_MEAT,                                       2, new int[][]{ {5,10}, {10,20}, null,  null   }),
-        new Cons(new String[]{"yakurum:spiral_cookie"},             3, new int[][]{ null,   {1,2},   {3,5}, null   }),
-        new Cons(new String[]{"yakurum:water_apple"},               5, new int[][]{ null,   {1,2},   {2,3}, null   }),
-        new Cons(new String[]{"yakurum:enchanted.golden_fish"},     8, new int[][]{ null,   {1,2},   null,  null   }),
+                                                                   new int[]{10, 10, 10,  0}, new int[][]{ {4,5},  {10,10}, {20,20}, null }),
+        new Cons(COOKED_MEAT,                                      new int[]{ 5,  5,  0,  0}, new int[][]{ {5,10}, {10,20}, null,  null   }),
+        new Cons(new String[]{"yakurum:spiral_cookie"},            new int[]{ 0,  9, 10,  0}, new int[][]{ null,   {1,2},   {3,5}, null   }),
+        new Cons(new String[]{"yakurum:water_apple"},              new int[]{ 0, 14, 10,  0}, new int[][]{ null,   {1,2},   {2,3}, null   }),
+        new Cons(new String[]{"yakurum:enchanted.golden_fish"},    new int[]{ 0, 12,  0,  0}, new int[][]{ null,   {1,2},   null,  null   }),
         // the three never-consumed foods: Legendary only, so the 1% machine owns them outright
-        new Cons(new String[]{"artifacts:eternal_steak"},          14, new int[][]{ null,   null,    null,  {1,1}  }),
-        new Cons(new String[]{"relics:infinity_ham"},              14, new int[][]{ null,   null,    null,  {1,1}  }),
-        new Cons(new String[]{"born_in_chaos_v1:eternal_candy"},   14, new int[][]{ null,   null,    null,  {1,1}  }),
-        new Cons(new String[]{"yakurum:enchanted.water_apple"},    10, new int[][]{ null,   null,    {1,1}, {2,3}  }),
-        new Cons(new String[]{"yakurum:diamond_apple"},            10, new int[][]{ null,   null,    {1,2}, null   }),
-        new Cons(new String[]{"yakurum:enchanted.diamond_apple"},  12, new int[][]{ null,   null,    null,  {1,2}  }),
+        new Cons(new String[]{"artifacts:eternal_steak"},          new int[]{ 0,  0,  0, 11}, new int[][]{ null,   null,    null,  {1,1}  }),
+        new Cons(new String[]{"relics:infinity_ham"},              new int[]{ 0,  0,  0, 11}, new int[][]{ null,   null,    null,  {1,1}  }),
+        new Cons(new String[]{"born_in_chaos_v1:eternal_candy"},   new int[]{ 0,  0,  0, 11}, new int[][]{ null,   null,    null,  {1,1}  }),
+        new Cons(new String[]{"yakurum:enchanted.water_apple"},    new int[]{ 0,  0, 12, 12}, new int[][]{ null,   null,    {1,1}, {2,3}  }),
+        new Cons(new String[]{"yakurum:diamond_apple"},            new int[]{ 0,  0, 13,  0}, new int[][]{ null,   null,    {1,2}, null   }),
+        new Cons(new String[]{"yakurum:enchanted.diamond_apple"},  new int[]{ 0,  0,  0, 14}, new int[][]{ null,   null,    null,  {1,2}  }),
         // ---------- buffs ----------
-        new Cons(new String[]{"yakurum:sacred_heart"},             10, new int[][]{ null,   {2,2},   {4,4}, {6,7}  }),
-        new Cons(new String[]{"yakurum:magic_coral"},              12, new int[][]{ null,   null,    {1,1}, {2,2}  }),
-        new Cons(new String[]{"yakurum:pink_orb"},                 14, new int[][]{ null,   null,    null,  {1,1}  }),
-        new Cons(new String[]{"yakurum:dew_gout"},                 12, new int[][]{ null,   null,    null,  {1,1}  }),
+        new Cons(new String[]{"yakurum:sacred_heart"},             new int[]{ 0, 15, 17, 17}, new int[][]{ null,   {2,2},   {4,4}, {6,7}  }),
+        new Cons(new String[]{"yakurum:magic_coral"},              new int[]{ 0,  0, 15, 14}, new int[][]{ null,   null,    {1,1}, {2,2}  }),
+        new Cons(new String[]{"yakurum:pink_orb"},                 new int[]{ 0,  0,  0, 16}, new int[][]{ null,   null,    null,  {1,1}  }),
+        new Cons(new String[]{"yakurum:dew_gout"},                 new int[]{ 0,  0,  0, 16}, new int[][]{ null,   null,    null,  {1,1}  }),
         // ---------- the lucky blocks' named potions ----------
-        new Cons(new String[]{"@lucky_potion"},                    12, new int[][]{ null,   null,    {1,1}, {2,2}  }),
-        new Cons(new String[]{"@water_potion"},                    12, new int[][]{ null,   null,    {1,1}, {2,2}  }),
-        new Cons(new String[]{"@hero_potion"},                     12, new int[][]{ null,   null,    {1,1}, {2,2}  }),
+        new Cons(new String[]{"@lucky_potion"},                    new int[]{ 0,  0, 16, 13}, new int[][]{ null,   null,    {1,1}, {2,2}  }),
+        new Cons(new String[]{"@water_potion"},                    new int[]{ 0,  0, 16, 13}, new int[][]{ null,   null,    {1,1}, {2,2}  }),
+        new Cons(new String[]{"@hero_potion"},                     new int[]{ 0,  0, 16, 13}, new int[][]{ null,   null,    {1,1}, {2,2}  }),
         // the Water LB's armour potions: one per tier, ordered by the armour they actually grant
-        new Cons(new String[]{"@armor_leather"},                    4, new int[][]{ {1,1},  null,    null,  null   }),
-        new Cons(new String[]{"@armor_golden"},                     6, new int[][]{ null,   {1,1},   null,  null   }),
-        new Cons(new String[]{"@armor_iron"},                       8, new int[][]{ null,   null,    {1,1}, null   }),
-        new Cons(new String[]{"@armor_diamond"},                   10, new int[][]{ null,   null,    null,  {1,1}  }),
+        new Cons(new String[]{"@armor_leather"},                   new int[]{10,  0,  0,  0}, new int[][]{ {1,1},  null,    null,  null   }),
+        new Cons(new String[]{"@armor_golden"},                    new int[]{ 0, 10,  0,  0}, new int[][]{ null,   {1,1},   null,  null   }),
+        new Cons(new String[]{"@armor_iron"},                      new int[]{ 0,  0, 10,  0}, new int[][]{ null,   null,    {1,1}, null   }),
+        new Cons(new String[]{"@armor_diamond"},                   new int[]{ 0,  0,  0, 15}, new int[][]{ null,   null,    null,  {1,1}  }),
         // Energy Element
-        new Cons(new String[]{"@fighting_energy"},                  4, new int[][]{ {1,1},  null,    null,  null   }),
-        new Cons(new String[]{"@double_energy"},                    6, new int[][]{ null,   {1,1},   null,  null   }),
-        new Cons(new String[]{"@rainbow_energy"},                   8, new int[][]{ null,   null,    {1,1}, null   }),
-        new Cons(new String[]{"@full_heal_energy"},                 8, new int[][]{ {1,1},  {1,1},   {2,2}, null   }),
+        new Cons(new String[]{"@fighting_energy"},                 new int[]{ 9,  0,  0,  0}, new int[][]{ {1,1},  null,    null,  null   }),
+        new Cons(new String[]{"@double_energy"},                   new int[]{ 0, 10,  0,  0}, new int[][]{ null,   {1,1},   null,  null   }),
+        new Cons(new String[]{"@rainbow_energy"},                  new int[]{ 0,  0, 12,  0}, new int[][]{ null,   null,    {1,1}, null   }),
+        new Cons(new String[]{"@full_heal_energy"},                new int[]{11, 11, 11,  0}, new int[][]{ {1,1},  {1,1},   {2,2}, null   }),
     };
 
     /**
@@ -431,7 +446,7 @@ public final class RewardPool {
     /**
      * Materials machine ({@link MachineType#ORES}) — four shelves: three infusion-ingredient families
      * (Chaos / Born-in-Chaos, vanilla, Yakurum) plus gear/progression materials. It draws a random
-     * 5–10 of the lines available at the machine's rarity (pure random: no guaranteed family mix, but
+     * 7–10 of the lines available at the machine's rarity (pure random: no guaranteed family mix, but
      * with a 9–15-line pool per rarity most machines still show a spread; user 2026-07-07).
      *
      * <p>Design principles (user, iterated 2026-07-07): the machine's RARITY is the reward — a rarer
@@ -441,7 +456,7 @@ public final class RewardPool {
      * two same-rarity machines differ ("une même ligne peut être bof ou bien"). Infusion mats are sold
      * raw (no NBT — the player infuses the block of their choice); prices are flat starting values, easy
      * to tune. A line whose item is absent (e.g. BiC/Yakurum not installed) is filtered out first, so
-     * the 5–10 shown are always real items.
+     * the 7–10 shown are always real items.
      */
     private static void rollMaterials(List<Article> out, Rarity rarity, RandomSource rng) {
         int r = rarity.ordinal();
@@ -452,57 +467,65 @@ public final class RewardPool {
             }
         }
         shuffle(eligible, rng);
-        int show = Math.min(5 + rng.nextInt(6), eligible.size());   // 5..10, capped at the pool size
+        int show = drawCount(eligible.size(), rng);
         for (int i = 0; i < show; i++) {
             Line line = eligible.get(i);
             int[] band = line.bands()[r];
             int count = band[0] + (band[1] > band[0] ? rng.nextInt(band[1] - band[0] + 1) : 0);
             ItemStack s = stack(line.id(), count);
             if (!s.isEmpty()) {
-                out.add(new Article(s, line.price()));
+                out.add(new Article(s, line.prices()[r]));
             }
         }
     }
 
     /**
-     * One materials line: an item, a flat level price, and its quantity band per rarity (indexed by
-     * {@link Rarity#ordinal()} — COMMON, RARE, EPIC, LEGENDARY; {@code null} = not sold at that rarity,
-     * {@code {min,max}} = quantity range rolled at generation).
+     * One materials line: an item, its level price PER RARITY (indexed by {@link Rarity#ordinal()},
+     * 0 where not sold), and its quantity band per rarity ({@code null} = not sold at that rarity,
+     * {@code {min,max}} = quantity range rolled at generation). Per-rarity prices since the tier-list
+     * pass (user 2026-07-09).
      */
-    private record Line(String id, int price, int[][] bands) {}
+    private record Line(String id, int[] prices, int[][] bands) {}
 
+    // Prices from the user's tier-list pass (2026-07-09). Prestige ingredients (water diamond, nether
+    // star, krampus) are deliberately dearer per infusion point than generic ones (gold, diamond).
     private static final Line[] MATERIALS_POOL = {
         // --- Chaos infusion (Born in Chaos) ---
-        new Line("born_in_chaos_v1:phantom_powder",     3, new int[][]{ {10, 18}, null,     null,     null    }),
-        new Line("born_in_chaos_v1:dark_rod",           4, new int[][]{ {4, 6},   {7, 12},  null,     null    }),
-        new Line("born_in_chaos_v1:fire_dust",          2, new int[][]{ {12, 20}, null,     null,     null    }),
-        new Line("born_in_chaos_v1:seedof_chaos",       8, new int[][]{ null,     {2, 4},   {5, 9},   null    }),
-        new Line("born_in_chaos_v1:krampus_horn",      12, new int[][]{ null,     {1, 2},   {2, 4},   {5, 6}  }),
-        new Line("born_in_chaos_v1:orbofthe_summoner", 13, new int[][]{ null,     null,     null,     {7, 9}  }),
+        // COMMON quantities trimmed alongside the Water lines (2026-07-09): both premium families now
+        // yield ~4.4-5.5 infusion points per level at Common, half the old rate.
+        new Line("born_in_chaos_v1:phantom_powder",    new int[]{10,  0,  0,  0}, new int[][]{ {8, 14},  null,     null,     null    }),
+        new Line("born_in_chaos_v1:dark_rod",          new int[]{ 9, 13,  0,  0}, new int[][]{ {3, 5},   {7, 12},  null,     null    }),
+        new Line("born_in_chaos_v1:fire_dust",         new int[]{ 9,  0,  0,  0}, new int[][]{ {8, 12},  null,     null,     null    }),
+        new Line("born_in_chaos_v1:seedof_chaos",      new int[]{ 0, 10, 11,  0}, new int[][]{ null,     {2, 4},   {5, 9},   null    }),
+        new Line("born_in_chaos_v1:krampus_horn",      new int[]{ 0, 13, 14, 14}, new int[][]{ null,     {1, 2},   {2, 4},   {7, 8}  }),
+        new Line("born_in_chaos_v1:orbofthe_summoner", new int[]{ 0,  0,  0, 12}, new int[][]{ null,     null,     null,     {8, 9}  }),
         // --- Vanilla infusion ---
-        new Line("minecraft:gold_ingot",                3, new int[][]{ {10, 18}, null,     null,     null    }),
-        new Line("minecraft:diamond",                   5, new int[][]{ {4, 6},   {7, 12},  null,     null    }),
-        new Line("minecraft:gold_block",                6, new int[][]{ {1, 2},   null,     null,     null    }),
-        new Line("minecraft:nether_star",              14, new int[][]{ null,     {1, 2},   {2, 4},   {5, 6}  }),
-        new Line("minecraft:golden_apple",              5, new int[][]{ null,     {2, 4},   null,     null    }),
-        new Line("minecraft:diamond_block",            10, new int[][]{ null,     null,     {2, 3},   null    }),
-        new Line("minecraft:enchanted_golden_apple",   14, new int[][]{ null,     null,     null,     {4, 5}  }),
+        new Line("minecraft:gold_ingot",               new int[]{ 4,  0,  0,  0}, new int[][]{ {10, 18}, null,     null,     null    }),
+        new Line("minecraft:diamond",                  new int[]{ 5,  9,  0,  0}, new int[][]{ {4, 6},   {7, 12},  null,     null    }),
+        new Line("minecraft:gold_block",               new int[]{ 7,  0,  0,  0}, new int[][]{ {1, 2},   null,     null,     null    }),
+        new Line("minecraft:nether_star",              new int[]{ 0, 14, 16, 16}, new int[][]{ null,     {1, 2},   {2, 4},   {8, 9}  }),
+        new Line("minecraft:golden_apple",             new int[]{ 0,  7,  0,  0}, new int[][]{ null,     {2, 4},   null,     null    }),
+        new Line("minecraft:diamond_block",            new int[]{ 0,  0, 12,  0}, new int[][]{ null,     null,     {2, 3},   null    }),
+        // every rarity, aligned with the Consumables machine (user 2026-07-09)
+        new Line("minecraft:enchanted_golden_apple",   new int[]{11, 13, 14, 13}, new int[][]{ {1, 1},   {2, 3},   {4, 5},   {7, 8}  }),
         // --- Yakurum infusion (Water LB) ---
-        new Line("yakurum:pearl",                       2, new int[][]{ {12, 20}, null,     null,     null    }),
-        new Line("yakurum:aquamarine",                  3, new int[][]{ {4, 6},   {7, 12},  null,     null    }),
-        new Line("yakurum:pearl_block",                 6, new int[][]{ {1, 2},   null,     null,     null    }),
-        new Line("yakurum:water_diamond",              14, new int[][]{ null,     {1, 2},   {2, 4},   {5, 6}  }),
-        new Line("yakurum:coral_crystal_block",         6, new int[][]{ null,     {2, 3},   null,     null    }),
-        new Line("yakurum:prismarine_gem_block",        8, new int[][]{ null,     null,     {3, 4},   null    }),
-        new Line("yakurum:aquamarine_block",            8, new int[][]{ null,     null,     null,     {5, 6}  }),
+        // COMMON quantities halved (2026-07-09, "une machine common n'est pas censée récompenser
+        // beaucoup") — pearl and aquamarine aligned on the same infusion yield (~4.4 pts/level).
+        new Line("yakurum:pearl",                      new int[]{11,  0,  0,  0}, new int[][]{ {6, 10},  null,     null,     null    }),
+        new Line("yakurum:aquamarine",                 new int[]{11, 14,  0,  0}, new int[][]{ {5, 7},   {10, 16}, null,     null    }),
+        new Line("yakurum:pearl_block",                new int[]{11,  0,  0,  0}, new int[][]{ {1, 1},   null,     null,     null    }),
+        new Line("yakurum:water_diamond",              new int[]{ 0, 15, 17, 17}, new int[][]{ null,     {1, 2},   {2, 4},   {8, 9}  }),
+        new Line("yakurum:coral_crystal_block",        new int[]{ 0, 14,  0,  0}, new int[][]{ null,     {2, 3},   null,     null    }),
+        new Line("yakurum:prismarine_gem_block",       new int[]{ 0,  0, 13,  0}, new int[][]{ null,     null,     {3, 4},   null    }),
+        new Line("yakurum:aquamarine_block",           new int[]{ 0,  0,  0, 15}, new int[][]{ null,     null,     null,     {7, 8}  }),
         // --- Gear / progression materials ---
-        new Line("minecraft:end_portal_frame",          6, new int[][]{ {2, 2},   {6, 7},   {11, 12}, {12, 12} }),
-        new Line("minecraft:ender_eye",                 4, new int[][]{ {1, 1},   {2, 3},   {7, 9},   {12, 12} }),
-        new Line("minecraft:ender_pearl",               2, new int[][]{ {5, 5},   {6, 7},   {12, 12}, null    }),
-        new Line("minecraft:blaze_rod",                 3, new int[][]{ {1, 2},   {3, 4},   {6, 6},   null    }),
-        new Line("minecraft:netherite_ingot",           8, new int[][]{ {1, 3},   {6, 12},  null,     null    }),
-        new Line("minecraft:netherite_block",          20, new int[][]{ null,     null,     {2, 3},   {4, 5}  }),
-        new Line("minecraft:netherite_upgrade_smithing_template", 4, new int[][]{ {1, 1}, {1, 2}, null, null }),
+        new Line("minecraft:end_portal_frame",         new int[]{10, 13, 11, 11}, new int[][]{ {2, 2},   {6, 7},   {11, 12}, {12, 12} }),
+        new Line("minecraft:ender_eye",                new int[]{ 6, 11, 11, 11}, new int[][]{ {1, 1},   {2, 3},   {7, 9},   {12, 12} }),
+        new Line("minecraft:ender_pearl",              new int[]{ 6,  5, 10,  0}, new int[][]{ {5, 5},   {6, 7},   {12, 12}, null    }),
+        new Line("minecraft:blaze_rod",                new int[]{ 6,  7, 10,  0}, new int[][]{ {1, 2},   {3, 4},   {6, 6},   null    }),
+        new Line("minecraft:netherite_ingot",          new int[]{ 9, 12,  0,  0}, new int[][]{ {1, 3},   {6, 12},  null,     null    }),
+        new Line("minecraft:netherite_block",          new int[]{ 0,  0, 15, 15}, new int[][]{ null,     null,     {2, 3},   {4, 5}  }),
+        new Line("minecraft:netherite_upgrade_smithing_template", new int[]{ 8,  8,  0,  0}, new int[][]{ {1, 1}, {1, 2}, null, null }),
     };
 
     private static ItemStack infusedBlock(ResourceLocation blockId, int luck) {
@@ -522,27 +545,29 @@ public final class RewardPool {
      * relics (Artifacts / Relics / Confluence-Terraria), totem-style accessories (Yakurum), mobility
      * pieces, Sophisticated Backpacks + upgrade modules. Unlike the materials machine, quantity is
      * always 1 and the machine's RARITY gates the QUALITY of what's offered, not the amount. A machine
-     * shows 5–8 items drawn at random from its rarity's pool.
+     * shows 7–10 items drawn at random from its rarity's pool.
      *
      * <p>Lucky tools are a capped slot (user 2026-07-07): EPIC offers exactly ONE random lucky tool,
-     * LEGENDARY offers TWO distinct ones among Radar / Hammer / Ring / Belt — the rest of the 5–8 are
+     * LEGENDARY offers TWO distinct ones among Radar / Hammer / Ring / Belt — the rest of the 7–10 are
      * filled from the rarity's non-tool pool. Backpacks come dyed a random cloth colour; the XP-pump
-     * module is bundled with its tank (Article.extra). Prices are placeholders, to tune by power.
+     * module is bundled with its tank (Article.extra). Prices are the user's tier-list pass
+     * (2026-07-09, ranges C 3-11 / R 5-15 / E 10-17 / L 11-17).
      */
     private static void rollTools(List<Article> out, Rarity rarity, RandomSource rng) {
-        int total = 5 + rng.nextInt(4);            // 5..8 items per machine
+        int total = LuckyXpCommonConfig.COMMON.debugFullStock.get() ? Integer.MAX_VALUE : 7 + rng.nextInt(4);
         int toolsAdded = 0;
 
-        // Capped lucky-tool slot.
+        // Capped lucky-tool slot. 16/17 = the top of the Epic/Legendary tier-list ranges, alongside
+        // the totems and the crystal heart (suggested 2026-07-09, pending the user's confirmation).
         if (rarity == Rarity.EPIC) {
             ItemStack t = toolStack(ALL_LUCKY_TOOLS[rng.nextInt(ALL_LUCKY_TOOLS.length)]);
-            if (!t.isEmpty()) { out.add(new Article(t, 15)); toolsAdded++; }
+            if (!t.isEmpty()) { out.add(new Article(t, 16)); toolsAdded++; }
         } else if (rarity == Rarity.LEGENDARY) {
             List<String> pick = new ArrayList<>(List.of(LEGENDARY_TOOLS));
             shuffle(pick, rng);
             for (int i = 0; i < Math.min(2, pick.size()); i++) {
                 ItemStack t = toolStack(pick.get(i));
-                if (!t.isEmpty()) { out.add(new Article(t, 16)); toolsAdded++; }
+                if (!t.isEmpty()) { out.add(new Article(t, 17)); toolsAdded++; }
             }
         }
 
@@ -561,11 +586,25 @@ public final class RewardPool {
             if (line.randomColor()) {
                 applyRandomBackpackColor(stack, rng);
             }
+            applyTooltipNbtFix(stack, line.id());
             ItemStack extra = ItemStack.EMPTY;
             if (line.extra() != null && ForgeRegistries.ITEMS.containsKey(new ResourceLocation(line.extra()))) {
                 extra = new ItemStack(ForgeRegistries.ITEMS.getValue(new ResourceLocation(line.extra())));
             }
             out.add(new Article(stack, extra, line.price()));
+        }
+    }
+
+    /**
+     * Correct cosmetic NBT so the machine's preview matches what the item really does in this pack.
+     * Right now the only offender is Yakurum's Pandilla's Totem: its tooltip reads a raw {@code uses}
+     * tag (defaulting to 5), but the pack's real reuse count comes from TotemBeforePlayerRevive
+     * ({@code multiUseTotems = ["yakurum:pandilla_totem=2"]}). Writing {@code uses=2} up front stops the
+     * "5 remaining" false hope — the item behaves as 2 either way, only the label was lying.
+     */
+    private static void applyTooltipNbtFix(ItemStack stack, String id) {
+        if ("yakurum:pandilla_totem".equals(id)) {
+            stack.getOrCreateTag().putInt("uses", 2);
         }
     }
 
@@ -593,88 +632,88 @@ public final class RewardPool {
     private record ToolLine(String id, Rarity rarity, int price, String extra, boolean randomColor) {}
 
     private static final ToolLine[] TOOLS_POOL = {
-        // Prices are flat-ish by item power, NOT by rarity tier: finding a rarer machine IS the reward,
-        // so a legendary piece is only slightly pricier than a common one (user 2026-07-07).
+        // Prices from the user's tier-list pass (2026-07-09). Tools run deliberately dearer than the
+        // other machines ("elles donnent du concret") — hence e.g. anvil/crafting upgrades back at 8.
         // ---------- COMMON ----------
-        new ToolLine("relics:bastion_ring",              Rarity.COMMON, 10, null, false),
+        new ToolLine("relics:bastion_ring",              Rarity.COMMON,  9, null, false),
         new ToolLine("relics:roller_skates",             Rarity.COMMON, 10, null, false),
         new ToolLine("relics:magma_walker",              Rarity.COMMON, 10, null, false),
         new ToolLine("relics:aqua_walker",               Rarity.COMMON, 10, null, false),
-        new ToolLine("confluence:hand_drill",            Rarity.COMMON, 10, null, false),
-        new ToolLine("confluence:hand_warmer",           Rarity.COMMON, 10, null, false),
-        new ToolLine("confluence:flower_boots",          Rarity.COMMON, 10, null, false),
-        new ToolLine("artifacts:panic_necklace",         Rarity.COMMON, 10, null, false),
-        new ToolLine("artifacts:feral_claws",            Rarity.COMMON, 10, null, false),
-        new ToolLine("artifacts:whoopee_cushion",        Rarity.COMMON,  5, null, false),
-        new ToolLine("sophisticatedbackpacks:backpack",  Rarity.COMMON, 5, null, true),
-        new ToolLine("sophisticatedbackpacks:anvil_upgrade",    Rarity.COMMON, 2, null, false),
-        new ToolLine("sophisticatedbackpacks:crafting_upgrade", Rarity.COMMON, 2, null, false),
-        new ToolLine("artifacts:villager_hat",           Rarity.COMMON, 10, null, false),
-        new ToolLine("artifacts:lucky_scarf",            Rarity.COMMON, 12, null, false),
-        new ToolLine("artifacts:night_vision_goggles",   Rarity.COMMON, 10, null, false),
-        new ToolLine("confluence:aglet",                 Rarity.COMMON,  8, null, false),
-        new ToolLine("confluence:flashlight",            Rarity.COMMON,  8, null, false),
-        new ToolLine("confluence:fast_clock",            Rarity.COMMON,  8, null, false),
-        new ToolLine("artifacts:snowshoes",              Rarity.COMMON,  8, null, false),
+        new ToolLine("confluence:hand_drill",            Rarity.COMMON,  9, null, false),
+        new ToolLine("confluence:hand_warmer",           Rarity.COMMON,  7, null, false),
+        new ToolLine("confluence:flower_boots",          Rarity.COMMON,  4, null, false),
+        new ToolLine("artifacts:panic_necklace",         Rarity.COMMON, 11, null, false),
+        new ToolLine("artifacts:feral_claws",            Rarity.COMMON, 11, null, false),
+        new ToolLine("artifacts:whoopee_cushion",        Rarity.COMMON,  4, null, false),
+        new ToolLine("sophisticatedbackpacks:backpack",  Rarity.COMMON,  9, null, true),
+        new ToolLine("sophisticatedbackpacks:anvil_upgrade",    Rarity.COMMON, 8, null, false),
+        new ToolLine("sophisticatedbackpacks:crafting_upgrade", Rarity.COMMON, 8, null, false),
+        new ToolLine("artifacts:villager_hat",           Rarity.COMMON,  8, null, false),
+        new ToolLine("artifacts:lucky_scarf",            Rarity.COMMON, 10, null, false),
+        new ToolLine("artifacts:night_vision_goggles",   Rarity.COMMON,  9, null, false),
+        new ToolLine("confluence:aglet",                 Rarity.COMMON,  9, null, false),
+        new ToolLine("confluence:flashlight",            Rarity.COMMON,  9, null, false),
+        new ToolLine("confluence:fast_clock",            Rarity.COMMON,  9, null, false),
+        new ToolLine("artifacts:snowshoes",              Rarity.COMMON,  7, null, false),
         // ---------- RARE ----------
-        new ToolLine("luckyxp:lucky_glasses",            Rarity.RARE, 12, null, false),
-        new ToolLine("artifacts:kitty_slippers",         Rarity.RARE, 10, null, false),
+        new ToolLine("luckyxp:lucky_glasses",            Rarity.RARE, 13, null, false),
+        new ToolLine("artifacts:kitty_slippers",         Rarity.RARE, 13, null, false),
         new ToolLine("artifacts:flame_pendant",          Rarity.RARE, 12, null, false),
-        new ToolLine("artifacts:charm_of_sinking",       Rarity.RARE, 10, null, false),
-        new ToolLine("artifacts:cloud_in_a_bottle",      Rarity.RARE, 10, null, false),
-        new ToolLine("relics:leather_belt",              Rarity.RARE, 10, null, false),
-        new ToolLine("relics:reflection_necklace",       Rarity.RARE, 12, null, false),
-        new ToolLine("confluence:sun_stone",             Rarity.RARE, 10, null, false),
-        new ToolLine("confluence:moon_stone",            Rarity.RARE, 10, null, false),
-        new ToolLine("confluence:magma_stone",           Rarity.RARE, 12, null, false),
-        new ToolLine("confluence:toolbox",               Rarity.RARE, 12, null, false),
-        new ToolLine("confluence:magiluminescence",      Rarity.RARE, 10, null, false),
-        new ToolLine("sophisticatedbackpacks:gold_backpack", Rarity.RARE, 5, null, true),
-        new ToolLine("sophisticatedbackpacks:advanced_feeding_upgrade", Rarity.RARE, 10, null, false),
-        new ToolLine("sophisticatedbackpacks:stack_upgrade_tier_3",     Rarity.RARE, 12, null, false),
-        new ToolLine("confluence:flipper",               Rarity.RARE, 10, null, false),
-        new ToolLine("confluence:lightning_boots",       Rarity.RARE, 14, null, false),
-        new ToolLine("artifacts:pickaxe_heater",         Rarity.RARE, 12, null, false),
-        new ToolLine("artifacts:rooted_boots",           Rarity.RARE, 10, null, false),
-        new ToolLine("artifacts:helium_flamingo",        Rarity.RARE, 12, null, false),
+        new ToolLine("artifacts:charm_of_sinking",       Rarity.RARE, 11, null, false),
+        new ToolLine("artifacts:cloud_in_a_bottle",      Rarity.RARE, 12, null, false),
+        new ToolLine("relics:leather_belt",              Rarity.RARE, 15, null, false),
+        new ToolLine("relics:reflection_necklace",       Rarity.RARE, 13, null, false),
+        new ToolLine("confluence:sun_stone",             Rarity.RARE, 14, null, false),
+        new ToolLine("confluence:moon_stone",            Rarity.RARE, 14, null, false),
+        new ToolLine("confluence:magma_stone",           Rarity.RARE, 14, null, false),
+        new ToolLine("confluence:toolbox",               Rarity.RARE, 15, null, false),
+        new ToolLine("confluence:magiluminescence",      Rarity.RARE, 12, null, false),
+        new ToolLine("sophisticatedbackpacks:gold_backpack", Rarity.RARE, 10, null, true),
+        new ToolLine("sophisticatedbackpacks:advanced_feeding_upgrade", Rarity.RARE, 9, null, false),
+        new ToolLine("sophisticatedbackpacks:stack_upgrade_tier_3",     Rarity.RARE, 9, null, false),
+        new ToolLine("confluence:flipper",               Rarity.RARE, 11, null, false),
+        new ToolLine("confluence:lightning_boots",       Rarity.RARE, 15, null, false),
+        new ToolLine("artifacts:pickaxe_heater",         Rarity.RARE, 11, null, false),
+        new ToolLine("artifacts:rooted_boots",           Rarity.RARE, 11, null, false),
+        new ToolLine("artifacts:helium_flamingo",        Rarity.RARE, 11, null, false),
         // ---------- EPIC ----------
-        new ToolLine("minecraft:totem_of_undying",       Rarity.EPIC, 12, null, false),
-        new ToolLine("artifacts:chorus_totem",           Rarity.EPIC, 14, null, false),
-        new ToolLine("artifacts:bunny_hoppers",          Rarity.EPIC, 12, null, false),
+        new ToolLine("minecraft:totem_of_undying",       Rarity.EPIC, 17, null, false),
+        new ToolLine("artifacts:chorus_totem",           Rarity.EPIC, 17, null, false),
+        new ToolLine("artifacts:bunny_hoppers",          Rarity.EPIC, 14, null, false),
         new ToolLine("artifacts:golden_hook",            Rarity.EPIC, 12, null, false),
         new ToolLine("artifacts:cross_necklace",         Rarity.EPIC, 12, null, false),
-        new ToolLine("confluence:extendo_grip",          Rarity.EPIC, 12, null, false),
-        new ToolLine("confluence:warrior_emblem",        Rarity.EPIC, 12, null, false),
-        new ToolLine("confluence:putrid_scent",          Rarity.EPIC, 10, null, false),
-        new ToolLine("relics:enders_hand",               Rarity.EPIC, 12, null, false),
-        new ToolLine("minecraft:elytra",                 Rarity.EPIC, 14, null, false),
-        new ToolLine("fuze_relics:jetpack_playbutton_chestplate", Rarity.EPIC, 14, null, false),
+        new ToolLine("confluence:extendo_grip",          Rarity.EPIC, 14, null, false),
+        new ToolLine("confluence:warrior_emblem",        Rarity.EPIC, 15, null, false),
+        new ToolLine("confluence:putrid_scent",          Rarity.EPIC, 12, null, false),
+        new ToolLine("relics:enders_hand",               Rarity.EPIC, 14, null, false),
+        new ToolLine("minecraft:elytra",                 Rarity.EPIC, 13, null, false),
+        new ToolLine("fuze_relics:jetpack_playbutton_chestplate", Rarity.EPIC, 13, null, false),
         new ToolLine("fuze_relics:grapplin_hook",        Rarity.EPIC, 12, null, false),
-        new ToolLine("relics:space_dissector",           Rarity.EPIC, 14, null, false),
-        new ToolLine("confluence:band_of_regeneration",  Rarity.EPIC, 12, null, false),
-        new ToolLine("sophisticatedbackpacks:diamond_backpack", Rarity.EPIC, 5, null, true),
-        new ToolLine("sophisticatedbackpacks:xp_pump_upgrade",  Rarity.EPIC, 12, "sophisticatedbackpacks:tank_upgrade", false),
+        new ToolLine("relics:space_dissector",           Rarity.EPIC, 16, null, false),
+        new ToolLine("confluence:band_of_regeneration",  Rarity.EPIC, 13, null, false),
+        new ToolLine("sophisticatedbackpacks:diamond_backpack", Rarity.EPIC, 10, null, true),
+        new ToolLine("sophisticatedbackpacks:xp_pump_upgrade",  Rarity.EPIC, 10, "sophisticatedbackpacks:tank_upgrade", false),
         new ToolLine("artifacts:antidote_vessel",        Rarity.EPIC, 12, null, false),
-        new ToolLine("confluence:ranger_emblem",         Rarity.EPIC, 12, null, false),
-        new ToolLine("confluence:brain_of_confusion",    Rarity.EPIC, 14, null, false),
+        new ToolLine("confluence:ranger_emblem",         Rarity.EPIC, 15, null, false),
+        new ToolLine("confluence:brain_of_confusion",    Rarity.EPIC, 12, null, false),
         new ToolLine("confluence:shark_tooth_necklace",  Rarity.EPIC, 12, null, false),
         new ToolLine("confluence:terraspark_boots",      Rarity.EPIC, 15, null, false),
-        new ToolLine("artifacts:snorkel",                Rarity.EPIC, 10, null, false),
+        new ToolLine("artifacts:snorkel",                Rarity.EPIC, 11, null, false),
         // ---------- LEGENDARY ----------
-        new ToolLine("yakurum:pandilla_totem",           Rarity.LEGENDARY, 15, null, false),
-        new ToolLine("yakurum:pearl_necklace",           Rarity.LEGENDARY, 14, null, false),
-        new ToolLine("artifacts:crystal_heart",          Rarity.LEGENDARY, 15, null, false),
-        new ToolLine("artifacts:vampiric_glove",         Rarity.LEGENDARY, 14, null, false),
+        new ToolLine("yakurum:pandilla_totem",           Rarity.LEGENDARY, 16, null, false),
+        new ToolLine("yakurum:pearl_necklace",           Rarity.LEGENDARY, 17, null, false),
+        new ToolLine("artifacts:crystal_heart",          Rarity.LEGENDARY, 17, null, false),
+        new ToolLine("artifacts:vampiric_glove",         Rarity.LEGENDARY, 12, null, false),
         new ToolLine("confluence:frozen_turtle_shell",   Rarity.LEGENDARY, 14, null, false),
-        new ToolLine("confluence:bundle_of_horseshoe_balloons", Rarity.LEGENDARY, 12, null, false),
-        new ToolLine("confluence:demon_heart",           Rarity.LEGENDARY, 15, null, false),
-        new ToolLine("yakurum:angel_wings",              Rarity.LEGENDARY, 15, null, false),
-        new ToolLine("sophisticatedbackpacks:netherite_backpack", Rarity.LEGENDARY, 5, null, true),
+        new ToolLine("confluence:bundle_of_horseshoe_balloons", Rarity.LEGENDARY, 13, null, false),
+        new ToolLine("confluence:demon_heart",           Rarity.LEGENDARY, 12, null, false),
+        new ToolLine("yakurum:angel_wings",              Rarity.LEGENDARY, 16, null, false),
+        new ToolLine("sophisticatedbackpacks:netherite_backpack", Rarity.LEGENDARY, 11, null, true),
         new ToolLine("confluence:ankh_shield",           Rarity.LEGENDARY, 16, null, false),
-        new ToolLine("confluence:worm_scarf",            Rarity.LEGENDARY, 15, null, false),
+        new ToolLine("confluence:worm_scarf",            Rarity.LEGENDARY, 12, null, false),
         new ToolLine("confluence:celestial_stone",       Rarity.LEGENDARY, 15, null, false),
-        new ToolLine("yakurum:king_triton_amulet",       Rarity.LEGENDARY, 15, null, false),
-        new ToolLine("sophisticatedbackpacks:advanced_alchemy_upgrade", Rarity.LEGENDARY, 12, null, false),
+        new ToolLine("yakurum:king_triton_amulet",       Rarity.LEGENDARY, 17, null, false),
+        new ToolLine("sophisticatedbackpacks:advanced_alchemy_upgrade", Rarity.LEGENDARY, 11, null, false),
     };
 
     private static ItemStack stack(String id, int count) {

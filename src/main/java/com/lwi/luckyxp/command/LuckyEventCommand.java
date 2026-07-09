@@ -10,8 +10,12 @@ import com.lwi.luckyxp.event.LuckyEvent.Scope;
 import com.lwi.luckyxp.event.LuckyEventManager;
 import com.lwi.luckyxp.event.LuckyEventScheduler;
 import com.lwi.luckyxp.event.LuckyEventType;
+import com.lwi.luckyxp.api.LuckyXpApi;
+import com.lwi.luckyxp.machine.MachineType;
 import com.lwi.luckyxp.machine.Rarity;
 import com.lwi.luckyxp.machine.VendingMachineBlockEntity;
+import com.lwi.luckyxp.worldgen.VendingStandFeature;
+import com.lwi.luckyxp.xp.LuckyXpData;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -28,10 +32,14 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import com.lwi.luckyxp.Registration;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -81,6 +89,17 @@ public final class LuckyEventCommand {
                 .then(Commands.literal("machine")
                         .then(Commands.argument("rarity", StringArgumentType.word()).suggests(RARITIES)
                                 .executes(ctx -> devMachine(ctx.getSource(), StringArgumentType.getString(ctx, "rarity")))))
+                // --- merchant : spawn a service merchant bound to the looked-at machine (test) ---
+                .then(Commands.literal("merchant").executes(ctx -> devMerchant(ctx.getSource())))
+                // dev: grant whole Lucky levels (the machine/merchant currency), for economy testing
+                .then(Commands.literal("levels")
+                        .then(Commands.argument("amount", IntegerArgumentType.integer(1, 1000))
+                                .executes(ctx -> devLevels(ctx.getSource(), intArg(ctx, "amount")))))
+                // dev: build the whole stand (structure + machine + merchant) in front of the player
+                .then(Commands.literal("stand")
+                        .executes(ctx -> devStand(ctx.getSource(), null))
+                        .then(Commands.argument("rarity", StringArgumentType.word()).suggests(RARITIES)
+                                .executes(ctx -> devStand(ctx.getSource(), StringArgumentType.getString(ctx, "rarity")))))
                 .then(outcomeArgs(Commands.literal("start"), false))     // real event (shower + End/dragon gate)
                 .then(outcomeArgs(Commands.literal("preview"), true))    // roulette only, no effect, no gate
                 // --- shower : test direct de l'apparition (saute la roulette) ---
@@ -179,6 +198,91 @@ public final class LuckyEventCommand {
         machine.devReroll(rarity, level);
         final Rarity r = rarity;
         src.sendSuccess(() -> Component.literal("Machine set to " + r.name() + " and re-rolled — reopen it.")
+                .withStyle(ChatFormatting.GREEN), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    /** Test helper: spawn a {@link com.lwi.luckyxp.entity.LuckyMerchant} next to the machine the
+     *  player is looking at, bound to it (worldgen normally does this at the stand). */
+    private static int devMerchant(CommandSourceStack src) throws CommandSyntaxException {
+        ServerPlayer player = src.getPlayerOrException();
+        ServerLevel level = player.serverLevel();
+        Vec3 eye = player.getEyePosition(1.0F);
+        Vec3 end = eye.add(player.getViewVector(1.0F).scale(20.0D));
+        BlockHitResult hit = level.clip(new ClipContext(eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+        if (hit.getType() != HitResult.Type.BLOCK) {
+            src.sendFailure(Component.literal("Look at a vending machine first."));
+            return 0;
+        }
+        BlockPos machinePos = hit.getBlockPos();
+        if (!(level.getBlockEntity(machinePos) instanceof VendingMachineBlockEntity)) {
+            machinePos = machinePos.below();
+            if (!(level.getBlockEntity(machinePos) instanceof VendingMachineBlockEntity)) {
+                src.sendFailure(Component.literal("That block is not a vending machine."));
+                return 0;
+            }
+        }
+        com.lwi.luckyxp.entity.LuckyMerchant merchant = Registration.LUCKY_MERCHANT.get().create(level);
+        if (merchant == null) {
+            src.sendFailure(Component.literal("Could not create the merchant."));
+            return 0;
+        }
+        BlockPos at = machinePos.relative(player.getDirection().getClockWise());
+        merchant.moveTo(at.getX() + 0.5, at.getY(), at.getZ() + 0.5, player.getYRot() + 180.0F, 0.0F);
+        merchant.setMachinePos(machinePos);
+        level.addFreshEntity(merchant);
+        src.sendSuccess(() -> Component.literal("Merchant spawned, bound to the machine.")
+                .withStyle(ChatFormatting.GREEN), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    /** Test helper: grant exactly {@code levels} whole Lucky levels (tops up the partial progress
+     *  first), so the economy can be tested in survival without farming lucky blocks. */
+    private static int devLevels(CommandSourceStack src, int levels) throws CommandSyntaxException {
+        ServerPlayer player = src.getPlayerOrException();
+        int cur = LuckyXpData.getLevel(player);
+        long needed = -LuckyXpData.getInto(player);
+        for (int i = 0; i < levels; i++) {
+            needed += LuckyXpData.xpToNext(cur + i);
+        }
+        LuckyXpApi.addXp(player, (int) Math.max(0, needed));
+        final int now = LuckyXpData.getLevel(player);
+        src.sendSuccess(() -> Component.literal("+" + levels + " Lucky levels (now level " + now + ")")
+                .withStyle(ChatFormatting.GREEN), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    /** Test helper: build the whole vending stand (structure + machine + bound merchant) a few
+     *  blocks in front of the player, snapped to the surface, skipping the worldgen density roll.
+     *  Rarity optional — without it, the real config weights roll, like worldgen. */
+    private static int devStand(CommandSourceStack src, @Nullable String rarityName) throws CommandSyntaxException {
+        ServerPlayer player = src.getPlayerOrException();
+        ServerLevel level = player.serverLevel();
+        Rarity rarity;
+        if (rarityName == null) {
+            rarity = Rarity.roll(level.random, new int[]{
+                    LuckyXpCommonConfig.COMMON.weightCommon.get(),
+                    LuckyXpCommonConfig.COMMON.weightRare.get(),
+                    LuckyXpCommonConfig.COMMON.weightEpic.get(),
+                    LuckyXpCommonConfig.COMMON.weightLegendary.get()});
+        } else {
+            try {
+                rarity = Rarity.valueOf(rarityName.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                src.sendFailure(Component.literal("Unknown rarity '" + rarityName + "' (common/rare/epic/legendary)."));
+                return 0;
+            }
+        }
+        MachineType type = MachineType.values()[level.random.nextInt(MachineType.values().length)];
+        // centre the 5-wide stall a few blocks ahead, snapped to the surface (the stand always
+        // faces north, like worldgen — walk around it if needed)
+        BlockPos base = player.blockPosition().relative(player.getDirection(), 5);
+        BlockPos o = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, base).offset(-2, 0, 0);
+        boolean clean = VendingStandFeature.suitable(level, o);
+        VendingStandFeature.build(level, o, rarity, type);
+        final Rarity r = rarity;
+        final String note = clean ? "" : " — spot would have been REJECTED by worldgen (uneven/wet/canopy), built anyway";
+        src.sendSuccess(() -> Component.literal("Stand built: " + r.name() + " " + type.name() + note)
                 .withStyle(ChatFormatting.GREEN), false);
         return Command.SINGLE_SUCCESS;
     }
