@@ -28,10 +28,15 @@ public final class RewardPool {
 
     /** How many lines to show: 7-10 random, or the whole pool when {@code debugFullStock} is on (test). */
     private static int drawCount(int poolSize, RandomSource rng) {
+        return drawCount(poolSize, rng, 7, 4);          // the big machines show 7-10 lines
+    }
+
+    /** Draw {@code base..base+spread-1} lines (or the whole pool in debug-full-stock review mode). */
+    private static int drawCount(int poolSize, RandomSource rng, int base, int spread) {
         if (LuckyXpCommonConfig.COMMON.debugFullStock.get()) {
             return poolSize;
         }
-        return Math.min(7 + rng.nextInt(4), poolSize);
+        return Math.min(base + rng.nextInt(spread), poolSize);
     }
 
     public static List<Article> roll(MachineType type, Rarity rarity, RandomSource rng) {
@@ -389,13 +394,51 @@ public final class RewardPool {
         list.add(t);
     }
 
+    // Block value tiers (user 2026-07-10): Water is the best block of the pack, Chaos second, then
+    // Pink/Morbius, then everything else. The tier drives the PRICE and the guaranteed-block rule
+    // below, not the Luck band (which is set purely by the machine's rarity).
+    private static final String T1_WATER = "lucky:water_lucky_block";
+    private static final String T2_CHAOS = "lucky:chaosluckyblock";
+    private static final java.util.Set<String> T3_BLOCKS =
+            java.util.Set.of("lucky:pink_lucky_block", "lucky:morbius_lucky_block");
+
+    /** 0 = T1 (Water), 1 = T2 (Chaos), 2 = T3 (Pink/Morbius), 3 = T4 (everything else). */
+    private static int infusedTier(ResourceLocation id) {
+        String s = id.toString();
+        if (T1_WATER.equals(s)) return 0;
+        if (T2_CHAOS.equals(s)) return 1;
+        if (T3_BLOCKS.contains(s)) return 2;
+        return 3;
+    }
+
     /**
-     * Infused-block machine (spec user 2026-07-04): 5 RANDOM lucky-block types, each infused to a
-     * random Luck inside the machine's tier band — common +10..+30, rare +30..+70, epic +70..+100,
-     * legendary flat +100. Values snap to steps of 5. Capped blocks stay in EVERY band (aligned with
-     * the lucky events, user 2026-07-06): their offered Luck is clamped to their own cap — a
-     * legendary machine sells the Chaos at its full +75 — and the price follows the REAL clamped
-     * value, so the tooltip and the cost never over-promise.
+     * MEDIAN level price [tier 0-3][rarity ordinal 0-3], the user's grid (2026-07-10). The actual
+     * price shifts +/-1 with where the rolled Luck lands in the band (see {@link #luckPriceShift}):
+     * a low-Luck roll costs median-1, a high-Luck roll median+1. Legendary is flat +100, so it always
+     * costs the median.
+     */
+    private static final int[][] INFUSED_PRICES = {
+            // Common Rare Epic Legend
+            { 10,   12,  16,  17 },   // T1 Water
+            {  9,   11,  15,  16 },   // T2 Chaos
+            {  6,    8,  12,  12 },   // T3 Pink / Morbius
+            {  5,    7,  11,  11 },   // T4 everything else
+    };
+
+    /** How many of each infused block a machine sells per rarity (user 2026-07-10). */
+    private static final int[] INFUSED_QTY = { 1, 3, 5, 8 };   // common, rare, epic, legendary
+
+    /**
+     * Infused-block machine: 5-8 RANDOM lucky-block types, each infused to a random Luck inside the
+     * machine's rarity band — common +10..+30, rare +30..+70, epic +70..+100, legendary flat +100.
+     * Values snap to steps of 5. Capped blocks (Water/Chaos) stay in EVERY band (aligned with the
+     * lucky events, user 2026-07-06): their offered Luck is clamped to their own cap and the QUANTITY
+     * given follows the rarity — a legendary sells 8 of each.
+     *
+     * <p>Price is a tier x rarity grid (user 2026-07-10): the block's own value tier (Water/Chaos/…)
+     * and the machine's rarity together set the level cost, flat within a band. A LEGENDARY machine is
+     * guaranteed to stock Water OR Chaos (whichever the shuffle offers; if both are absent from the
+     * draw one is forced in).
      */
     private static void rollInfusedLb(List<Article> out, Rarity rarity, RandomSource rng) {
         int min;
@@ -412,7 +455,15 @@ public final class RewardPool {
         List<ResourceLocation> pool = new ArrayList<>(LuckyTweaksApi.getLuckyBlockIds());
         pool.removeIf(id -> !"lucky".equals(id.getNamespace()));
         shuffle(pool, rng);
-        int n = Math.min(5, pool.size());
+        int n = drawCount(pool.size(), rng, 5, 4);      // this machine shows 5-8 lines
+
+        // Legendary guarantee: make sure Water OR Chaos is inside the first n picked. If neither made
+        // the cut, swap one that IS in the pool into a random offered slot.
+        if (rarity == Rarity.LEGENDARY) {
+            ensurePremiumInDraw(pool, n, rng);
+        }
+
+        int qty = INFUSED_QTY[rarity.ordinal()];
         for (int i = 0; i < n; i++) {
             ResourceLocation id = pool.get(i);
             int luck = (min == max) ? max : min + rng.nextInt(max - min + 1);
@@ -423,14 +474,43 @@ public final class RewardPool {
             }
             ItemStack s = infusedBlock(id, luck);
             if (!s.isEmpty()) {
-                out.add(new Article(s, costForLuck(luck)));
+                s.setCount(qty);
+                int price = INFUSED_PRICES[infusedTier(id)][rarity.ordinal()] + luckPriceShift(luck, min, max);
+                out.add(new Article(s, price));
             }
         }
     }
 
-    /** Level cost of an infused block, from its Luck (tunable): +10 -> 3, +30 -> 8, +70 -> 18, +100 -> 25. */
-    private static int costForLuck(int luck) {
-        return Math.max(3, Math.round(luck * 0.25F));
+    /** Where the rolled Luck sits in the band -> price shift: lower third -1, middle 0, upper third +1
+     *  (a flat band, i.e. legendary, always returns 0). Uses the FINAL Luck, so a capped block's
+     *  clamped value drives an honest shift. */
+    private static int luckPriceShift(int luck, int min, int max) {
+        if (max <= min) {
+            return 0;
+        }
+        float t = (float) (luck - min) / (max - min);
+        if (t < 1.0F / 3.0F) return -1;
+        if (t > 2.0F / 3.0F) return +1;
+        return 0;
+    }
+
+    /** Force Water or Chaos into the first {@code n} of the (already shuffled) pool, if neither is there. */
+    private static void ensurePremiumInDraw(List<ResourceLocation> pool, int n, RandomSource rng) {
+        for (int i = 0; i < n && i < pool.size(); i++) {
+            int t = infusedTier(pool.get(i));
+            if (t == 0 || t == 1) {
+                return;                                     // a premium block is already on offer
+            }
+        }
+        // find any premium anywhere in the pool (beyond slot n) and swap it into a random offered slot
+        for (int j = n; j < pool.size(); j++) {
+            int t = infusedTier(pool.get(j));
+            if (t == 0 || t == 1) {
+                java.util.Collections.swap(pool, j, rng.nextInt(n));
+                return;
+            }
+        }
+        // neither Water nor Chaos installed at all — nothing to guarantee, leave the draw as is
     }
 
     /** In-place Fisher-Yates with the world's RandomSource (Collections.shuffle needs java.util.Random). */
