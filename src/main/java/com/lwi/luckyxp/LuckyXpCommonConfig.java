@@ -67,10 +67,10 @@ public final class LuckyXpCommonConfig {
             standChance = b.comment(
                             "One stand attempted per this many chunks (1 = every chunk, 0/1 disables the filter).",
                             "Terrain may still reject a stand, so the real rate is slightly lower.",
-                            "Calibrated on a measured 1467 chunks explored per hour: at 500, a stand shows up every",
-                            "20 minutes and is worth ~283 Lucky XP of exploration -- exactly the price of a dear line.",
+                            "Calibrated on a measured 1467 chunks explored per hour: at 700, a stand shows up every",
+                            "~29 minutes and is worth ~279 Lucky XP of exploration -- about level 14, the price of a dear line.",
                             "Lower it while testing (60 puts one almost everywhere); the shipped value is what matters.")
-                    .defineInRange("standChance", 500, 1, 100000);
+                    .defineInRange("standChance", 700, 1, 100000);
             debugFullStock = b.comment(
                             "TESTING ONLY. When true, every machine lists its ENTIRE rarity pool instead of the",
                             "usual 7-10 random lines — so you can see all items at once. Leave false for real play.")
@@ -98,8 +98,8 @@ public final class LuckyXpCommonConfig {
                             "This is the ONLY pace control: the level curve is vanilla's, and machine prices are in",
                             "levels, so scaling the curve by K would be exactly the same as dividing baseXp by K.",
                             "Calibrated on a measured session (119 lucky blocks in 49 min, one block per 10.1 chunks):",
-                            "at 4, a run reaches level 14 in ~29 min, and a stand (standChance=500) is worth ~199 XP --",
-                            "level 11, so the player must CHOOSE a line rather than afford the machine's best every",
+                            "at 4, a run reaches level 14 in ~29 min, and a stand (standChance=700) is worth ~279 XP --",
+                            "level 14, so the player must CHOOSE a line rather than afford the machine's best every",
                             "time. A lucky-block pack hands out far more XP than vanilla ever does; this is deliberately",
                             "slower than it looks. Raising it makes every machine price cheaper, in proportion.")
                     .defineInRange("baseXp", 4, 0, 1000);
