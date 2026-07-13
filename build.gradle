@@ -56,6 +56,11 @@ repositories {
         name = 'BlameJared'
         url = 'https://maven.blamejared.com/'
     }
+    maven {
+        // GeckoLib (the merchant's animated model). The full mod ships with the modpack at runtime.
+        name = 'GeckoLib'
+        url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
+    }
 }
 
 dependencies {
@@ -70,6 +75,8 @@ dependencies {
     // runs fine without JEI installed.
     compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-common-api:${jei_version}")
     compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge-api:${jei_version}")
+    // GeckoLib animation library (the animated Lucky Merchant), same version the modpack ships.
+    implementation "software.bernie.geckolib:geckolib-forge-1.20.1:4.7.3"
 }
 
 tasks.named('processResources', ProcessResources).configure {

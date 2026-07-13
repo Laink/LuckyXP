@@ -20,6 +20,13 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.network.NetworkHooks;
 import org.jetbrains.annotations.Nullable;
+import software.bernie.geckolib.animatable.GeoEntity;
+import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
+import software.bernie.geckolib.core.animation.AnimatableManager;
+import software.bernie.geckolib.core.animation.AnimationController;
+import software.bernie.geckolib.core.animation.RawAnimation;
+import software.bernie.geckolib.core.object.PlayState;
+import software.bernie.geckolib.util.GeckoLibUtil;
 
 /**
  * The stand's merchant: a stationary NPC placed next to each vending machine at worldgen, selling six
@@ -29,13 +36,39 @@ import org.jetbrains.annotations.Nullable;
  * <p>He never walks (no movement goals), never despawns, cannot be hurt or pushed. He remembers his
  * machine's position ({@code MachinePos}) so the reroll/convert services know their target.
  */
-public class LuckyMerchant extends PathfinderMob {
+public class LuckyMerchant extends PathfinderMob implements GeoEntity {
+    /** GeckoLib controller + triggerable animation names, matching lucky_merchant.animation.json. */
+    public static final String CONTROLLER = "controller";
+    public static final String ANIM_SALE = "sale";
+    /** Blend time between idle and sale: with 0 the pose snapped, which read as a stutter. */
+    private static final int TRANSITION_TICKS = 5;
+    private static final RawAnimation IDLE = RawAnimation.begin().thenLoop("idle");
+    private static final RawAnimation SALE = RawAnimation.begin().thenPlay(ANIM_SALE);
+
+    private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
+
     private BlockPos machinePos = BlockPos.ZERO;
 
     public LuckyMerchant(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
         setPersistenceRequired();
         setInvulnerable(true);
+    }
+
+    /** Play the SALE animation once, then fall back to idle (server-side; GeckoLib syncs it to viewers). */
+    public void playSale() {
+        triggerAnim(CONTROLLER, ANIM_SALE);
+    }
+
+    @Override
+    public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
+        controllers.add(new AnimationController<>(this, CONTROLLER, TRANSITION_TICKS, state -> state.setAndContinue(IDLE))
+                .triggerableAnim(ANIM_SALE, SALE));
+    }
+
+    @Override
+    public AnimatableInstanceCache getAnimatableInstanceCache() {
+        return this.cache;
     }
 
     public void setMachinePos(BlockPos pos) {
@@ -100,6 +133,7 @@ public class LuckyMerchant extends PathfinderMob {
         if (!level().isClientSide && player instanceof ServerPlayer serverPlayer) {
             rebindIfLegacyBroken();
             BlockPos target = machinePos;
+            int merchantId = getId();
             NetworkHooks.openScreen(serverPlayer, new MenuProvider() {
                 @Override
                 public Component getDisplayName() {
@@ -109,9 +143,12 @@ public class LuckyMerchant extends PathfinderMob {
                 @Nullable
                 @Override
                 public AbstractContainerMenu createMenu(int id, Inventory inv, Player p) {
-                    return new MerchantMenu(id, inv, target);
+                    return new MerchantMenu(id, inv, target, merchantId);
                 }
-            }, buf -> buf.writeBlockPos(target));
+            }, buf -> {
+                buf.writeBlockPos(target);
+                buf.writeVarInt(merchantId);
+            });
         }
         return InteractionResult.sidedSuccess(level().isClientSide);
     }

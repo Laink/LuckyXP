@@ -80,8 +80,11 @@ public final class LuckyEventCommand {
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
+        // No hasPermission(2) gate: it kept the command off a LAN host who hadn't been op'd to level 2
+        // (opening to LAN with cheats does not reliably grant it), while the pack's other dev commands
+        // like lwlocatortest carry no gate and worked fine. This is a TEST command -- it must be
+        // re-gated or removed before ship (see the pre-ship checklist), not left open on a real server.
         event.getDispatcher().register(Commands.literal("luckyevent")
-                .requires(src -> src.hasPermission(2))
                 .then(Commands.literal("stop").executes(ctx -> stop(ctx.getSource())))
                 .then(Commands.literal("status").executes(ctx -> status(ctx.getSource())))
                 .then(Commands.literal("roll").executes(ctx -> forceRoll(ctx.getSource())))

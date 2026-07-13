@@ -46,14 +46,17 @@ public class MerchantMenu extends AbstractContainerMenu {
     };
 
     private final BlockPos machinePos;
+    /** The merchant entity that opened this menu, so a sale can trigger his SALE animation. */
+    private final int merchantId;
 
-    public MerchantMenu(int id, Inventory inv, BlockPos machinePos) {
+    public MerchantMenu(int id, Inventory inv, BlockPos machinePos, int merchantId) {
         super(Registration.MERCHANT_MENU.get(), id);
         this.machinePos = machinePos;
+        this.merchantId = merchantId;
     }
 
     public MerchantMenu(int id, Inventory inv, FriendlyByteBuf buf) {
-        this(id, inv, buf.readBlockPos());
+        this(id, inv, buf.readBlockPos(), buf.readVarInt());
     }
 
     @Override
@@ -78,6 +81,9 @@ public class MerchantMenu extends AbstractContainerMenu {
         sp.level().playSound(null, sp.blockPosition(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.NEUTRAL, 0.9F, 1.2F);
         sp.level().playSound(null, sp.blockPosition(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.NEUTRAL, 0.7F, 1.8F);
         sp.level().playSound(null, sp.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.NEUTRAL, 0.4F, 1.4F);
+        if (sp.level().getEntity(merchantId) instanceof com.lwi.luckyxp.entity.LuckyMerchant merchant) {
+            merchant.playSale();                        // the shopkeeper reacts to the sale
+        }
         return true;
     }
 
