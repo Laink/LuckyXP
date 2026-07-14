@@ -3,6 +3,7 @@ package com.lwi.luckyxp.client;
 import com.lwi.luckystats.api.LuckyStatsClientApi;
 import com.lwi.luckystats.client.ScreenSections;
 import com.lwi.luckyxp.LuckyXpMod;
+import com.lwi.luckyxp.xp.LuckBuffs;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -53,6 +54,25 @@ public final class EventStatsContribution {
             }
             if (data.getInt(K_MEGAS) > 0) {
                 rows.add(new ScreenSections.Row("Mega jackpots", String.valueOf(data.getInt(K_MEGAS))));
+            }
+            return rows;
+        });
+
+        // The merchant's luck buffs, added to the shared "Luck" section (Lucky Stats merges same-titled
+        // sections, so these sit under the same header as Optional Suffering's total/malus rows). Each
+        // row shows only when non-zero, and short labels keep them clear of the value column.
+        LuckyStatsClientApi.registerScreenSection("Luck", data -> {
+            int temp = data.getInt(LuckBuffs.STAT_TEMP);
+            int perm = data.getInt(LuckBuffs.STAT_PERM);
+            if (temp <= 0 && perm <= 0) {
+                return null;
+            }
+            List<ScreenSections.Row> rows = new ArrayList<>();
+            if (temp > 0) {
+                rows.add(new ScreenSections.Row("Temporary luck", "+" + temp + "%"));
+            }
+            if (perm > 0) {
+                rows.add(new ScreenSections.Row("Permanent luck", "+" + perm + "%"));
             }
             return rows;
         });

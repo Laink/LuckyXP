@@ -59,10 +59,20 @@ public class MerchantMenu extends AbstractContainerMenu {
         this(id, inv, buf.readBlockPos(), buf.readVarInt());
     }
 
+    /** The machine this merchant is bound to, so the stand's timer can boot open screens on close. */
+    public BlockPos machinePos() {
+        return machinePos;
+    }
+
     @Override
     public boolean clickMenuButton(Player player, int buttonId) {
         if (buttonId < 0 || buttonId >= PRICES.length || !(player instanceof ServerPlayer sp)) {
             return false;
+        }
+        // The whole stand goes inert when its window closes — even with the menu still open.
+        if (sp.serverLevel().getBlockEntity(machinePos) instanceof VendingMachineBlockEntity machine
+                && machine.isClosed()) {
+            return fail(sp, "This stand has closed for good.");
         }
         int price = PRICES[buttonId];
         boolean creative = sp.getAbilities().instabuild;
@@ -104,6 +114,8 @@ public class MerchantMenu extends AbstractContainerMenu {
                 }
                 MachineType next = MachineType.values()[(be.getMachineType().ordinal() + 1) % MachineType.values().length];
                 Rarity rarity = be.getRarity();
+                long closeAt = be.closeAt();            // the stand's window survives the block swap
+                boolean wasClosed = be.isClosed();
                 Block block = Registration.MACHINES.get(next).get();
                 BlockPos upPos = machinePos.above();
                 BlockState oldLower = level.getBlockState(machinePos);
@@ -118,6 +130,7 @@ public class MerchantMenu extends AbstractContainerMenu {
                     level.setBlock(upPos, block.withPropertiesOf(oldUpper), flags);
                 }
                 if (level.getBlockEntity(machinePos) instanceof VendingMachineBlockEntity fresh) {
+                    fresh.restoreTimer(closeAt, wasClosed);     // the countdown belongs to the STAND
                     fresh.devReroll(rarity, level);             // new type, same rarity, fresh stock
                 }
                 msg(sp, "Machine converted to " + next.name() + "!", ChatFormatting.GREEN);
@@ -132,6 +145,9 @@ public class MerchantMenu extends AbstractContainerMenu {
                 return true;
             }
             case SERVICE_PERM_LUCK -> {
+                if (LuckBuffs.getPermLuck(sp) >= LuckBuffs.permLuckCap()) {
+                    return fail(sp, "Already at maximum permanent luck (+" + LuckBuffs.permLuckCap() + "%)!");
+                }
                 int pct = 1 + level.random.nextInt(3);          // +1..3%
                 int total = LuckBuffs.addPermLuck(sp, pct);
                 msg(sp, "+" + pct + "% permanent luck (total +" + total + "%)", ChatFormatting.LIGHT_PURPLE);

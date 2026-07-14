@@ -1,9 +1,9 @@
 {
   "replace": false,
   "values": [
-    "luckyxp:vending_machine_potions",
-    "luckyxp:vending_machine_infused_lb",
-    "luckyxp:vending_machine_ores",
+    "luckyxp:vending_machine_consumables",
+    "luckyxp:vending_machine_lucky_blocks",
+    "luckyxp:vending_machine_materials",
     "luckyxp:vending_machine_tools"
   ]
 }

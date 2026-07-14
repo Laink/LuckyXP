@@ -1,0 +1,6 @@
+{
+  "parent": "luckyxp:block/vending_machine_top_base",
+  "textures": {
+    "screen": "luckyxp:block/vending_machine_screens/vending_machine_screen_lucky_blocks_epic"
+  }
+}

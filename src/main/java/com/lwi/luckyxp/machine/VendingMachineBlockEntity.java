@@ -1,5 +1,6 @@
 package com.lwi.luckyxp.machine;
 
+import com.lwi.luckyxp.LuckyXpCommonConfig;
 import com.lwi.luckyxp.Registration;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -17,6 +18,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jetbrains.annotations.Nullable;
 
@@ -29,9 +31,31 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
     private List<Article> stock = new ArrayList<>();
     private boolean rolled = false;
     private Rarity rarity = Rarity.COMMON;
+    /** The stand's one-time open window: game time at which it closes for good, or -1 = not started. */
+    private long closeAt = -1;
+    /** Once true the stand is gone for good — machine and merchant both refuse (see {@link StandTimer}). */
+    private boolean closed = false;
 
     public VendingMachineBlockEntity(BlockPos pos, BlockState state) {
         super(Registration.VENDING_MACHINE_BE.get(), pos, state);
+    }
+
+    /** Register/deregister the whole stand's indestructible region as this machine loads/unloads —
+     *  the box is anchored on this BE (see {@link StandProtection}). */
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        if (level != null && !level.isClientSide) {
+            StandProtection.register(level, worldPosition);
+        }
+    }
+
+    @Override
+    public void setRemoved() {
+        super.setRemoved();
+        if (level != null && !level.isClientSide) {
+            StandProtection.unregister(level, worldPosition);
+        }
     }
 
     public MachineType getMachineType() {
@@ -45,6 +69,7 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
     /** Set by the stand at worldgen (before the stock is rolled). */
     public void setRarity(Rarity rarity) {
         this.rarity = rarity;
+        applyRarityToState();
         setChanged();
         if (level != null && !level.isClientSide && level.isLoaded(worldPosition)) {
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);  // push to clients (skipped during worldgen)
@@ -85,9 +110,94 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         this.rarity = r;
         this.rolled = false;
         ensureStock(level);
+        applyRarityToState();
         setChanged();
         if (level != null && !level.isClientSide && level.isLoaded(worldPosition)) {
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+        }
+    }
+
+    // ---- the stand's one-time open window (see StandTimer for the tick) ----
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    public long closeAt() {
+        return closeAt;
+    }
+
+    /** First interaction with the stand (machine OR merchant) arms the countdown; later calls no-op. */
+    public void startTimerIfNeeded(Level level) {
+        if (!closed && closeAt < 0) {
+            closeAt = level.getGameTime() + LuckyXpCommonConfig.COMMON.standTimerSeconds.get() * 20L;
+            setChanged();
+        }
+    }
+
+    /** Terminal: the stand is done for good. Also flips the block's {@code closed} state so the upper
+     *  half shows the 404 screen (persisted in the chunk; the timer never reopens a closed stand). */
+    public void markClosed() {
+        closed = true;
+        applyClosedToState();
+        setChanged();
+    }
+
+    /**
+     * Mirror the closed flag onto BOTH halves' {@code CLOSED} block-state property so the upper half
+     * renders the 404 screen. Same UPDATE_KNOWN_SHAPE (16) approach as {@link #applyRarityToState} — no
+     * self-destruct, same block keeps this BE — and flag 2 pushes the new state to clients to re-mesh.
+     */
+    private void applyClosedToState() {
+        if (level == null || level.isClientSide) {
+            return;
+        }
+        BlockState lower = getBlockState();
+        if (!(lower.getBlock() instanceof VendingMachineBlock) || lower.getValue(VendingMachineBlock.CLOSED)) {
+            return;
+        }
+        int flags = 2 | 16;
+        level.setBlock(worldPosition, lower.setValue(VendingMachineBlock.CLOSED, true), flags);
+        BlockPos up = worldPosition.above();
+        BlockState upper = level.getBlockState(up);
+        if (upper.getBlock() instanceof VendingMachineBlock
+                && upper.getValue(VendingMachineBlock.HALF) == DoubleBlockHalf.UPPER) {
+            level.setBlock(up, upper.setValue(VendingMachineBlock.CLOSED, true), flags);
+        }
+    }
+
+    /**
+     * Carry the stand's open-window across a machine TYPE conversion: the merchant's convert service
+     * replaces the block, which creates a FRESH block entity — without this, the countdown silently
+     * reset and re-armed at 3:00 on the next interaction. The window is the STAND's, not the block's.
+     */
+    public void restoreTimer(long closeAtGameTime, boolean isClosed) {
+        this.closeAt = closeAtGameTime;
+        this.closed = isClosed;
+        setChanged();
+    }
+
+    /**
+     * Mirror the rarity onto BOTH halves' {@code RARITY} block-state property, so the upper half shows
+     * the matching screen model. Uses UPDATE_KNOWN_SHAPE (16) so the double block does not self-destruct
+     * mid-swap (same reason as the merchant's type conversion), and same-block setBlock keeps this BE +
+     * its stock. No-op on the client or before the block is in the world.
+     */
+    private void applyRarityToState() {
+        if (level == null || level.isClientSide) {
+            return;
+        }
+        BlockState lower = getBlockState();
+        if (!(lower.getBlock() instanceof VendingMachineBlock) || lower.getValue(VendingMachineBlock.RARITY) == rarity) {
+            return;
+        }
+        int flags = 2 | 16;
+        level.setBlock(worldPosition, lower.setValue(VendingMachineBlock.RARITY, rarity), flags);
+        BlockPos up = worldPosition.above();
+        BlockState upper = level.getBlockState(up);
+        if (upper.getBlock() instanceof VendingMachineBlock
+                && upper.getValue(VendingMachineBlock.HALF) == DoubleBlockHalf.UPPER) {
+            level.setBlock(up, upper.setValue(VendingMachineBlock.RARITY, rarity), flags);
         }
     }
 
@@ -121,6 +231,8 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         tag.put("Stock", list);
         tag.putBoolean("Rolled", rolled);
         tag.putString("Rarity", rarity.name());
+        tag.putLong("CloseAt", closeAt);
+        tag.putBoolean("Closed", closed);
     }
 
     @Override
@@ -128,6 +240,8 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         super.load(tag);
         rolled = tag.getBoolean("Rolled");
         rarity = parseRarity(tag.getString("Rarity"));
+        closeAt = tag.contains("CloseAt") ? tag.getLong("CloseAt") : -1;
+        closed = tag.getBoolean("Closed");
         stock = new ArrayList<>();
         ListTag list = tag.getList("Stock", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++) {

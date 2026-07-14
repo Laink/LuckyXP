@@ -2,6 +2,7 @@ package com.lwi.luckyxp.xp;
 
 import com.lwi.luckystats.api.LuckyStatsApi;
 import com.lwi.luckytweaks.api.LuckyTweaksApi;
+import com.lwi.luckyxp.LuckyXpCommonConfig;
 import com.lwi.luckyxp.LuckyXpMod;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
@@ -39,7 +40,16 @@ public final class LuckBuffs {
     private static final String SRC_MERCHANT = "luckyxp_merchant";
     private static final int INTERVAL = 20;                 // HUD refresh cadence (~1s), like GearLuckReporter
 
+    /** Synced stats keys read by the "Luck" section of the Lucky Stats screen (see EventStatsContribution). */
+    public static final String STAT_PERM = "luckyxp_perm_luck";
+    public static final String STAT_TEMP = "luckyxp_temp_luck";
+
     private LuckBuffs() {}
+
+    /** The permanent-luck ceiling (config), also enforced when the merchant sells the service. */
+    public static int permLuckCap() {
+        return LuckyXpCommonConfig.COMMON.permLuckCap.get();
+    }
 
     private static CompoundTag root(Player player) {
         CompoundTag data = player.getPersistentData();
@@ -60,10 +70,21 @@ public final class LuckBuffs {
         return luck;
     }
 
-    /** Add permanent luck (merchant service), returns the new total. */
+    /** The player's permanent merchant luck so far (%). */
+    public static int getPermLuck(ServerPlayer player) {
+        return root(player).getInt(K_PERM);
+    }
+
+    /** The active temporary luck boost (%), or 0 if none is running. */
+    public static int getTempLuck(ServerPlayer player) {
+        CompoundTag tag = root(player);
+        return tag.getLong(K_TEMP_UNTIL) > player.level().getGameTime() ? tag.getInt(K_TEMP_PCT) : 0;
+    }
+
+    /** Add permanent luck (merchant service), clamped to the configured cap; returns the new total. */
     public static int addPermLuck(ServerPlayer player, int pct) {
         CompoundTag tag = root(player);
-        int total = tag.getInt(K_PERM) + pct;
+        int total = Math.min(permLuckCap(), tag.getInt(K_PERM) + pct);
         tag.putInt(K_PERM, total);
         return total;
     }
@@ -101,6 +122,15 @@ public final class LuckBuffs {
         if (mods.getInt(SRC_MERCHANT) != luck) {
             mods.putInt(SRC_MERCHANT, luck);
             stats.put(SUB_KEY, mods);
+        }
+        // Break the total into its two parts for the "Luck" section of the stats screen.
+        int perm = root(player).getInt(K_PERM);
+        int temp = getTempLuck(player);
+        if (stats.getInt(STAT_PERM) != perm) {
+            stats.putInt(STAT_PERM, perm);
+        }
+        if (stats.getInt(STAT_TEMP) != temp) {
+            stats.putInt(STAT_TEMP, temp);
         }
     }
 }

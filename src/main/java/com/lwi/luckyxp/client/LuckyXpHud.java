@@ -69,6 +69,35 @@ public final class LuckyXpHud {
                 });
     }
 
+    /**
+     * Improved Mobs registers its bottom-right difficulty text below EXPERIENCE_BAR — inside our lift
+     * window — so it rode up with the cluster and covered the shared-lives hearts. Forge forbids
+     * ordering an overlay against ANOTHER mod's ("Only order against vanilla's and your own"), so the
+     * counter-lift wraps its render through the per-overlay Pre/Post events instead. Pre runs at
+     * LOWEST (and skips cancelled events), so the +/- translate pair can never go unbalanced.
+     */
+    @Mod.EventBusSubscriber(modid = LuckyXpMod.MODID, value = Dist.CLIENT)
+    public static final class ImDifficultyUnlift {
+        private static final ResourceLocation IM_OVERLAY =
+                new ResourceLocation("improvedmobs", "difficulty_overlay");
+
+        private ImDifficultyUnlift() {}
+
+        @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.LOWEST)
+        public static void onPre(net.minecraftforge.client.event.RenderGuiOverlayEvent.Pre event) {
+            if (IM_OVERLAY.equals(event.getOverlay().id())) {
+                event.getGuiGraphics().pose().translate(0.0, liftAmount(), 0.0);
+            }
+        }
+
+        @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.HIGHEST)
+        public static void onPost(net.minecraftforge.client.event.RenderGuiOverlayEvent.Post event) {
+            if (IM_OVERLAY.equals(event.getOverlay().id())) {
+                event.getGuiGraphics().pose().translate(0.0, -liftAmount(), 0.0);
+            }
+        }
+    }
+
     /** Cluster lift in px: full "reserve" when the blue Lucky XP bar is shown, else a small "gap" above the vanilla XP bar (both from config). */
     private static int liftAmount() {
         return shouldShow() ? LuckyXpConfig.CLIENT.reserve.get() : LuckyXpConfig.CLIENT.gap.get();

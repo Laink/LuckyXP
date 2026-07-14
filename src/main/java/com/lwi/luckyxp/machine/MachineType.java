@@ -6,9 +6,11 @@ package com.lwi.luckyxp.machine;
  * on the stand/awning and gates stock quality). New types = a new screen texture + a reward branch.
  */
 public enum MachineType {
-    POTIONS("potions"),
-    INFUSED_LB("infused_lb"),
-    ORES("ores"),
+    // The constant names are historical; the ids are the user-facing block names (2026-07-11):
+    // Consumables / Lucky Blocks / Materials / Tools "Vending Machine".
+    POTIONS("consumables"),
+    INFUSED_LB("lucky_blocks"),
+    ORES("materials"),
     TOOLS("tools");
 
     /** Stable id used in block/registry names, model paths and NBT. */

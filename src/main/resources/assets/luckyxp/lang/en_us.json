@@ -1,7 +1,7 @@
 {
-  "block.luckyxp.vending_machine_potions": "Consumables Vending Machine",
-  "block.luckyxp.vending_machine_infused_lb": "Infused Lucky Block Vending Machine",
-  "block.luckyxp.vending_machine_ores": "Ore Vending Machine",
+  "block.luckyxp.vending_machine_consumables": "Consumables Vending Machine",
+  "block.luckyxp.vending_machine_lucky_blocks": "Lucky Blocks Vending Machine",
+  "block.luckyxp.vending_machine_materials": "Materials Vending Machine",
   "block.luckyxp.vending_machine_tools": "Tools Vending Machine",
   "itemGroup.luckyxp": "Lucky XP",
   "entity.luckyxp.lucky_merchant": "Lucky Merchant",

@@ -2,9 +2,11 @@ package com.lwi.luckyxp.machine;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.util.RandomSource;
+import net.minecraft.util.StringRepresentable;
 
-/** Vending-machine rarity tiers. Weight = spawn chance; color drives the GUI title (also labelled by name). */
-public enum Rarity {
+/** Vending-machine rarity tiers. Weight = spawn chance; color drives the GUI title (also labelled by name).
+ *  Also a block-state property ({@code rarity}) so the machine's external screen model varies by tier. */
+public enum Rarity implements StringRepresentable {
     COMMON("common", ChatFormatting.GREEN, 59),
     RARE("rare", ChatFormatting.BLUE, 30),
     EPIC("epic", ChatFormatting.LIGHT_PURPLE, 10),
@@ -18,6 +20,11 @@ public enum Rarity {
         this.id = id;
         this.color = color;
         this.weight = weight;
+    }
+
+    @Override
+    public String getSerializedName() {
+        return id;
     }
 
     /** ARGB color for GUI text. */

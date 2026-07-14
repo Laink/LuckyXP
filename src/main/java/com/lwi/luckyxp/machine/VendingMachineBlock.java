@@ -22,6 +22,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
@@ -38,13 +39,20 @@ import org.jetbrains.annotations.Nullable;
 public class VendingMachineBlock extends BaseEntityBlock {
     public static final EnumProperty<DoubleBlockHalf> HALF = BlockStateProperties.DOUBLE_BLOCK_HALF;
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
+    /** Drives the upper half's screen model; kept in sync with the block entity's rarity (see
+     *  {@link VendingMachineBlockEntity#setRarity}). */
+    public static final EnumProperty<Rarity> RARITY = EnumProperty.create("rarity", Rarity.class);
+    /** Once the stand's timer closes, the upper half swaps to the universal "404" screen (see
+     *  {@link VendingMachineBlockEntity#markClosed}). Overrides the rarity screen in the blockstate. */
+    public static final BooleanProperty CLOSED = BooleanProperty.create("closed");
     private final MachineType type;
 
     public VendingMachineBlock(Properties props, MachineType type) {
         super(props);
         this.type = type;
         this.registerDefaultState(this.stateDefinition.any()
-                .setValue(HALF, DoubleBlockHalf.LOWER).setValue(FACING, Direction.NORTH));
+                .setValue(HALF, DoubleBlockHalf.LOWER).setValue(FACING, Direction.NORTH)
+                .setValue(RARITY, Rarity.COMMON).setValue(CLOSED, false));
     }
 
     public MachineType getMachineType() {
@@ -53,7 +61,7 @@ public class VendingMachineBlock extends BaseEntityBlock {
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(HALF, FACING);
+        builder.add(HALF, FACING, RARITY, CLOSED);
     }
 
     @Override
@@ -149,11 +157,33 @@ public class VendingMachineBlock extends BaseEntityBlock {
         if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
             BlockPos lowerPos = state.getValue(HALF) == DoubleBlockHalf.LOWER ? pos : pos.below();
             if (level.getBlockEntity(lowerPos) instanceof VendingMachineBlockEntity machine) {
+                if (machine.isClosed()) {
+                    serverPlayer.displayClientMessage(net.minecraft.network.chat.Component
+                            .literal("This stand has closed for good.")
+                            .withStyle(net.minecraft.ChatFormatting.RED), true);
+                    return InteractionResult.sidedSuccess(level.isClientSide);
+                }
+                machine.startTimerIfNeeded(level);      // the FIRST look arms the stand's closing timer
                 machine.ensureStock(level);
                 NetworkHooks.openScreen(serverPlayer, machine,
-                        buf -> VendingMachineMenu.writeOpenData(buf, machine.stock(), machine.getMachineType(), machine.getRarity()));
+                        buf -> VendingMachineMenu.writeOpenData(buf, machine.stock(), machine.getMachineType(), machine.getRarity(), machine.closeAt()));
             }
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    /** Server-side once-a-second stand timer (display countdown, decor burn-down, terminal close). */
+    @Nullable
+    @Override
+    public <T extends BlockEntity> net.minecraft.world.level.block.entity.BlockEntityTicker<T> getTicker(
+            Level level, BlockState state, net.minecraft.world.level.block.entity.BlockEntityType<T> type) {
+        if (level.isClientSide || type != com.lwi.luckyxp.Registration.VENDING_MACHINE_BE.get()) {
+            return null;
+        }
+        return (lvl, pos, st, be) -> {
+            if (be instanceof VendingMachineBlockEntity machine && lvl instanceof net.minecraft.server.level.ServerLevel server) {
+                StandTimer.tick(server, pos, machine);
+            }
+        };
     }
 }

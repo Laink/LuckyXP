@@ -3,6 +3,8 @@ package com.lwi.luckyxp.entity;
 import com.lwi.luckyxp.Registration;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.ThrowableItemProjectile;
 import net.minecraft.world.item.Item;
@@ -37,6 +39,9 @@ public class ThrownLuckyBottle extends ThrowableItemProjectile {
     protected void onHit(HitResult result) {
         super.onHit(result);
         if (level() instanceof ServerLevel server) {
+            // The shatter — same glass-break sound the vanilla xp bottle plays (its levelEvent 2002).
+            server.playSound(null, getX(), getY(), getZ(), SoundEvents.SPLASH_POTION_BREAK,
+                    SoundSource.NEUTRAL, 1.0F, server.random.nextFloat() * 0.1F + 0.9F);
             server.sendParticles(ParticleTypes.HAPPY_VILLAGER, getX(), getY(), getZ(), 12, 0.3, 0.3, 0.3, 0.0);
             server.sendParticles(ParticleTypes.ENCHANT, getX(), getY() + 0.5, getZ(), 24, 0.3, 0.3, 0.3, 0.2);
             int amount = 3 + random.nextInt(5) + random.nextInt(5);     // vanilla's 3-11 range

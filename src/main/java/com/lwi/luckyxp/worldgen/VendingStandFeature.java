@@ -1,6 +1,7 @@
 package com.lwi.luckyxp.worldgen;
 
 import com.lwi.luckyxp.LuckyXpCommonConfig;
+import com.lwi.luckyxp.LuckyXpMod;
 import com.lwi.luckyxp.Registration;
 import com.lwi.luckyxp.machine.MachineType;
 import com.lwi.luckyxp.machine.Rarity;
@@ -9,31 +10,47 @@ import com.lwi.luckyxp.machine.VendingMachineBlockEntity;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.WorldGenLevel;
-import net.minecraft.world.level.levelgen.Heightmap;
-import org.slf4j.Logger;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.LanternBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.AttachFace;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
-import net.minecraft.world.level.block.state.properties.Half;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.feature.Feature;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConfiguration;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
+import org.slf4j.Logger;
 
 /**
- * A finer-grained open market stall (5x4 footprint) housing a vending machine. Built from slim
- * elements (fences for posts, a fence + pressure-plate counter, a trapdoor awning valance, a thin
- * carpet rug) rather than full blocks, to avoid a blocky look. Origin = front-left ground corner;
- * extends +X (right), +Z (back), +Y (up); the machine faces the front (-Z). Rolls a rarity (awning +
- * rug colour, machine stock/LED) and a machine type. Left bay left open for a future merchant NPC.
+ * The market stand, placed from the designer's structure template ({@code data/luckyxp/structures/
+ * vending_stand.nbt}, 8x12x9): the built stall, its decorative entities and the floating "00:00" timer
+ * display. The template's bottom 3 layers are BURIED (the closing smoke system lives down there), so
+ * the structure's lower corner sits 3 blocks below the surface.
+ *
+ * <p>Designer's reference points, measured from the structure's lower corner (0,0,0):
+ * machine (1,3,3) — the template carries a MATERIALS placeholder whose block we swap to the rolled
+ * type, keeping its facing/half states; merchant (4,3,3); timer display (5, 5.5, 3).
+ *
+ * <p>Rolls a rarity (config weights) and a machine type; the rarity lands on both the block entity
+ * (stock quality) and the {@code RARITY} block-state property (the external screen model).
  */
 public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final int FLAGS = 2;
+    public static final ResourceLocation TEMPLATE = new ResourceLocation(LuckyXpMod.MODID, "vending_stand");
+
+    /** Template footprint (X, Y, Z) and the buried depth. */
+    public static final int SIZE_X = 8, SIZE_Y = 12, SIZE_Z = 9, BURIED = 3;
+    /** The machine's LOWER half, relative to the structure's lower corner. */
+    public static final BlockPos MACHINE_OFFSET = new BlockPos(1, 3, 3);
+    private static final BlockPos MERCHANT_OFFSET = new BlockPos(4, 3, 3);
+    /** East face of the bubble-column's top block — where the dropped wall lever is re-placed. */
+    private static final BlockPos LEVER_OFFSET = new BlockPos(2, 5, 5);
+
     /** Max ground-height spread across the footprint before the spot is rejected. */
     private static final int MAX_UNEVENNESS = 2;
 
@@ -69,134 +86,97 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
     }
 
     /**
-     * Builds the full stand — structure, machine (rarity applied) and bound merchant. Shared by
+     * Places the full stand — template, machine (rarity applied) and bound merchant. Shared by
      * worldgen ({@link #place}) and the dev command {@code /luckyevent stand}, which skips the
-     * density roll above.
+     * density roll above. {@code surface} is the ground-level origin; the template is sunk
+     * {@link #BURIED} blocks so its smoke layers end up underground.
      */
-    public static boolean build(WorldGenLevel level, BlockPos o, Rarity rarity, MachineType type) {
-        BlockState air = Blocks.AIR.defaultBlockState();
-        BlockState floor = Blocks.STONE_BRICKS.defaultBlockState();
-        BlockState fence = Blocks.OAK_FENCE.defaultBlockState();
-        BlockState plate = Blocks.OAK_PRESSURE_PLATE.defaultBlockState();
-        // Single stall colour on purpose (user 2026-07-04): the rarity is read on the machine's own
-        // screen LED / trade GUI, never on the stand, so every stand looks the same from afar.
-        BlockState stripe = Blocks.RED_WOOL.defaultBlockState();
-        BlockState white = Blocks.WHITE_WOOL.defaultBlockState();
-        BlockState rug = Blocks.RED_CARPET.defaultBlockState();
-        BlockState lantern = Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true);
-        BlockState valance = Blocks.OAK_TRAPDOOR.defaultBlockState()
-                .setValue(BlockStateProperties.HALF, Half.TOP)
-                .setValue(BlockStateProperties.OPEN, true)
-                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH);
-        BlockState lectern = Blocks.LECTERN.defaultBlockState()
-                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH);
-
-        // 1. clear the volume
-        for (int dx = 0; dx <= 4; dx++) {
-            for (int dz = -1; dz <= 3; dz++) {
-                for (int dy = 1; dy <= 6; dy++) {
-                    level.setBlock(o.offset(dx, dy, dz), air, FLAGS);
-                }
-            }
+    public static boolean build(WorldGenLevel level, BlockPos surface, Rarity rarity, MachineType type) {
+        StructureTemplate tpl = level.getLevel().getServer().getStructureManager()
+                .get(TEMPLATE).orElse(null);
+        if (tpl == null) {
+            LOGGER.error("Vending stand template {} is missing", TEMPLATE);
+            return false;
         }
+        BlockPos origin = surface.below(BURIED);
+        // Two guards are needed to place this hand-built stall VERBATIM — the designer's blocks break
+        // strict vanilla support rules and would be culled otherwise:
+        //  - setKnownShape(true) skips placeInWorld's FINAL re-validation pass (updateFromNeighbourShapes
+        //    on every block, StructureTemplate:326-333) — that alone saved the roof rows / wall-signs.
+        //  - flag 16 (UPDATE_KNOWN_SHAPE) on the placement itself stops each block, as it lands, from
+        //    pushing a shape-update onto its already-placed neighbours. Without it a later block dropped
+        //    the wall lever mounted against the decorative bubble-column. That column also sits on the
+        //    designer's acacia (not soul-sand), so it only stays a bubble column while nothing sends it
+        //    a shape update — fine here, the whole stall is unbreakable in play and the water is walled
+        //    in on every side so it never flows. The NBT states already carry every fence/stair/wall
+        //    connection, so nothing needs a shape-update to look right.
+        StructurePlaceSettings settings = new StructurePlaceSettings().setKnownShape(true);
+        tpl.placeInWorld(level, origin, origin, settings, level.getRandom(), 2 | 16);
 
-        // 2. floor + thin centre rug (with a short foundation under dips, so no corner floats)
-        for (int dx = 0; dx <= 4; dx++) {
-            for (int dz = 0; dz <= 3; dz++) {
-                level.setBlock(o.offset(dx, 0, dz), floor, FLAGS);
-                for (int dy = -1; dy >= -3; dy--) {
-                    BlockPos below = o.offset(dx, dy, dz);
-                    BlockState st = level.getBlockState(below);
-                    if (!st.isAir() && st.getFluidState().isEmpty() && !st.canBeReplaced()) {
-                        break; // reached real ground
-                    }
-                    level.setBlock(below, floor, FLAGS);
-                }
-            }
+        // Restore the wall lever on the column's east face. The designer's soul-fire → bubble-column
+        // swap dropped it (a lever can't attach to water, so it fell in his world and his export shows a
+        // blank sign there now). We re-place it at the same spot/state, flag 2|16 so it holds against the
+        // column like the rest of the stall's decor — no export round-trip needed.
+        level.setBlock(origin.offset(LEVER_OFFSET), Blocks.LEVER.defaultBlockState()
+                .setValue(BlockStateProperties.ATTACH_FACE, AttachFace.WALL)
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.EAST), 2 | 16);
+
+        // Swap the template's placeholder machine to the rolled TYPE, keeping the designer's states
+        // (facing/half) — the same withPropertiesOf recipe as the merchant's paid type conversion —
+        // and stamp the rolled rarity on both the state (screen model) and the entity (stock).
+        BlockPos mPos = origin.offset(MACHINE_OFFSET);
+        BlockPos upPos = mPos.above();
+        Block target = Registration.MACHINES.get(type).get();
+        BlockState oldLower = level.getBlockState(mPos);
+        BlockState oldUpper = level.getBlockState(upPos);
+        int flags = 2 | 16;                             // clients + known-shape (no double-block self-destruct)
+        if (oldLower.getBlock() instanceof VendingMachineBlock) {
+            level.setBlock(mPos, target.withPropertiesOf(oldLower)
+                    .setValue(VendingMachineBlock.RARITY, rarity), flags);
+        } else {
+            LOGGER.warn("Vending stand template placed no machine at {} — placing a default-facing one", mPos);
+            level.setBlock(mPos, target.defaultBlockState()
+                    .setValue(VendingMachineBlock.RARITY, rarity), flags);
         }
-        level.setBlock(o.offset(2, 1, 1), rug, FLAGS);
-        level.setBlock(o.offset(2, 1, 2), rug, FLAGS);
-
-        // 3. slim fence posts (back taller for the awning slope)
-        for (int dx : new int[]{0, 4}) {
-            for (int dy = 1; dy <= 3; dy++) {
-                level.setBlock(o.offset(dx, dy, 0), fence, FLAGS);  // front
-            }
-            for (int dy = 1; dy <= 4; dy++) {
-                level.setBlock(o.offset(dx, dy, 3), fence, FLAGS);  // back
-            }
+        if (oldUpper.getBlock() instanceof VendingMachineBlock) {
+            level.setBlock(upPos, target.withPropertiesOf(oldUpper)
+                    .setValue(VendingMachineBlock.RARITY, rarity), flags);
+        } else {
+            level.setBlock(upPos, level.getBlockState(mPos)
+                    .setValue(VendingMachineBlock.HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER), flags);
         }
-
-        // 4. airy back railing
-        for (int dx = 1; dx <= 3; dx++) {
-            level.setBlock(o.offset(dx, 1, 3), fence, FLAGS);
-            level.setBlock(o.offset(dx, 2, 3), fence, FLAGS);
-        }
-
-        // 5. counter = fence + pressure plate (classic slim table), merchant bay
-        for (int dx = 2; dx <= 3; dx++) {
-            level.setBlock(o.offset(dx, 1, 0), fence, FLAGS);
-            level.setBlock(o.offset(dx, 2, 0), plate, FLAGS);
-        }
-
-        // 6. striped awning sloping to the front (Y5 back -> Y4 mid -> Y3 overhang)
-        for (int dx = 0; dx <= 4; dx++) {
-            for (int dz = -1; dz <= 3; dz++) {
-                level.setBlock(o.offset(dx, awningY(dz), dz), (dx % 2 == 0) ? stripe : white, FLAGS);
-            }
-        }
-
-        // 7. trapdoor valance hanging under the front overhang
-        for (int dx = 0; dx <= 4; dx++) {
-            level.setBlock(o.offset(dx, 2, -1), valance, FLAGS);
-        }
-
-        // 8. a hanging lantern in each bay (under the Y4 awning at dz=1)
-        level.setBlock(o.offset(1, 3, 1), lantern, FLAGS);
-        level.setBlock(o.offset(3, 3, 1), lantern, FLAGS);
-
-        // 9. merchant spot (left bay): a lectern, open floor for a future NPC
-        level.setBlock(o.offset(3, 1, 2), lectern, FLAGS);
-
-        // 10. the vending machine (right bay), facing the front (-Z / north)
-        Block machineBlock = Registration.MACHINES.get(type).get();
-        BlockPos mPos = o.offset(1, 1, 2);
-        BlockState lower = machineBlock.defaultBlockState()
-                .setValue(VendingMachineBlock.HALF, DoubleBlockHalf.LOWER)
-                .setValue(VendingMachineBlock.FACING, Direction.NORTH);
-        level.setBlock(mPos, lower, FLAGS);
-        level.setBlock(mPos.above(), lower.setValue(VendingMachineBlock.HALF, DoubleBlockHalf.UPPER), FLAGS);
         if (level.getBlockEntity(mPos) instanceof VendingMachineBlockEntity be) {
             be.setRarity(rarity);
         }
 
-        // 11. the merchant, in the left bay by his lectern, facing the front like his machine. He
-        // sells the six services (reroll, convert, luck, heal, repair) — see MerchantMenu.
+        // The merchant, by his counter, looking the same way the machine faces.
         com.lwi.luckyxp.entity.LuckyMerchant merchant =
                 Registration.LUCKY_MERCHANT.get().create(level.getLevel());
         if (merchant != null) {
-            BlockPos sPos = o.offset(3, 1, 1);
-            merchant.moveTo(sPos.getX() + 0.5, sPos.getY(), sPos.getZ() + 0.5, 180.0F, 0.0F);
+            BlockPos sPos = origin.offset(MERCHANT_OFFSET);
+            Direction facing = level.getBlockState(mPos).getBlock() instanceof VendingMachineBlock
+                    ? level.getBlockState(mPos).getValue(VendingMachineBlock.FACING) : Direction.NORTH;
+            merchant.moveTo(sPos.getX() + 0.5, sPos.getY(), sPos.getZ() + 0.5, facing.toYRot(), 0.0F);
             merchant.setMachinePos(mPos);
             level.addFreshEntity(merchant);
         }
-        LOGGER.info("Vending stand placed: {} {} at {} {} {}", rarity, type, o.getX(), o.getY(), o.getZ());
+        LOGGER.info("Vending stand placed: {} {} at {} {} {}", rarity, type, surface.getX(), surface.getY(), surface.getZ());
         return true;
     }
 
     /**
-     * Whether this surface spot can host the 5x4 stall: every footprint column must be dry and sit on
+     * Whether this surface spot can host the 8x9 stall: every footprint column must be dry and sit on
      * REAL ground (soft cover — grass, snow layers — is skipped; leaves are rejected, so no stall on a
      * flat tree canopy), and the real-ground heights may not spread more than {@link #MAX_UNEVENNESS}
-     * (dips up to that are bridged by the foundation). Caves are impossible by construction: the
-     * placement heightmap always resolves the world surface. Rejecting returns false — the rarity roll
-     * simply tries elsewhere another chunk.
+     * (small dips are hidden by the template's buried layers). Caves are impossible by construction:
+     * the placement heightmap always resolves the world surface. Rejecting returns false — the rarity
+     * roll simply tries elsewhere another chunk.
      */
     public static boolean suitable(WorldGenLevel level, BlockPos o) {
         int min = Integer.MAX_VALUE;
         int max = Integer.MIN_VALUE;
-        for (int dx = 0; dx <= 4; dx++) {
-            for (int dz = -1; dz <= 3; dz++) {
+        for (int dx = 0; dx < SIZE_X; dx++) {
+            for (int dz = 0; dz < SIZE_Z; dz++) {
                 int h = level.getHeight(Heightmap.Types.WORLD_SURFACE_WG, o.getX() + dx, o.getZ() + dz);
                 // Walk down through soft cover (plants, snow layers) counted by the heightmap,
                 // to measure the REAL ground and its height.
@@ -219,9 +199,5 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
             }
         }
         return max - min <= MAX_UNEVENNESS;
-    }
-
-    private static int awningY(int dz) {
-        return dz >= 2 ? 5 : (dz >= 0 ? 4 : 3);
     }
 }

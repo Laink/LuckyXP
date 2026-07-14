@@ -142,7 +142,44 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
     }
 
     private void renderHeader(GuiGraphics g) {
-        centered(g, typeLabel(), leftPos + L.panelW / 2, topPos + L.headerTypeY, L.cTxt);
+        int y = topPos + L.headerTypeY;
+        g.drawString(this.font, typeLabel(), leftPos + 8, y, L.cTxt, false);          // machine title, left
+        String timer = timerLabel();
+        if (!timer.isEmpty()) {                                                        // countdown, right
+            g.drawString(this.font, timer, leftPos + L.panelW - 8 - font.width(timer), y, timerColor(), false);
+        }
+    }
+
+    /** Header timer colour: normal CRT green, blinking red at 2 Hz in the final {@code URGENT_SECONDS}
+     *  (in sync with the in-world display), solid red once CLOSED. */
+    private int timerColor() {
+        if (minecraft == null || minecraft.level == null || menu.closeAt() < 0) {
+            return L.cTxt;
+        }
+        long remaining = menu.closeAt() - minecraft.level.getGameTime();
+        if (remaining <= 0) {
+            return 0xFFFF5555;                                                          // CLOSED
+        }
+        boolean urgent = remaining / 20 <= com.lwi.luckyxp.machine.StandTimer.URGENT_SECONDS;
+        if (urgent && (minecraft.level.getGameTime() / 10) % 2 == 0) {
+            return 0xFFFF5555;                                                          // red on alternate half-seconds
+        }
+        return L.cTxt;
+    }
+
+    /** Live stand countdown for the header, derived each frame from the client's own synced game time
+     *  (so it ticks down without any per-tick packet). Empty until the timer is armed; "CLOSED" once up. */
+    private String timerLabel() {
+        long closeAt = menu.closeAt();
+        if (closeAt < 0 || minecraft == null || minecraft.level == null) {
+            return "";
+        }
+        long remaining = closeAt - minecraft.level.getGameTime();
+        if (remaining <= 0) {
+            return "CLOSED";
+        }
+        int s = (int) (remaining / 20);
+        return String.format("%02d:%02d", s / 60, s % 60);
     }
 
     private void renderList(GuiGraphics g, int mouseX, int mouseY) {

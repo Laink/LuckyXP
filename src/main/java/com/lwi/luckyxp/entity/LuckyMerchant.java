@@ -133,6 +133,16 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
         if (!level().isClientSide && player instanceof ServerPlayer serverPlayer) {
             rebindIfLegacyBroken();
             BlockPos target = machinePos;
+            // The merchant belongs to the stand: once its window closed, he is done trading — and his
+            // first customer arms the same countdown the machine does.
+            if (level().getBlockEntity(target) instanceof VendingMachineBlockEntity machine) {
+                if (machine.isClosed()) {
+                    serverPlayer.displayClientMessage(Component.literal("This stand has closed for good.")
+                            .withStyle(net.minecraft.ChatFormatting.RED), true);
+                    return InteractionResult.sidedSuccess(level().isClientSide);
+                }
+                machine.startTimerIfNeeded(level());
+            }
             int merchantId = getId();
             NetworkHooks.openScreen(serverPlayer, new MenuProvider() {
                 @Override

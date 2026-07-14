@@ -24,6 +24,12 @@ public class VendingMachineMenu extends AbstractContainerMenu {
     private final ContainerLevelAccess access;
     private final MachineType type;
     private final Rarity rarity;
+    /** Server side: the machine's lower-half position, so the stand's timer can boot open screens on
+     *  close ({@code null} client side — never used there). */
+    private final BlockPos machinePos;
+    /** The stand's closing game-time, or -1 if unarmed. Sent to the client so the trade screen shows a
+     *  live mm:ss (computed each frame from the client's own synced game time — no per-tick packet). */
+    private final long closeAt;
 
     /** Server side: built from the block entity. */
     public VendingMachineMenu(int id, Inventory inv, List<Article> stock, BlockPos pos, MachineType type, Rarity rarity) {
@@ -31,6 +37,8 @@ public class VendingMachineMenu extends AbstractContainerMenu {
         this.stock = stock;
         this.type = type;
         this.rarity = rarity;
+        this.closeAt = -1;                                  // server side never reads this; the client gets it via the buffer
+        this.machinePos = pos;
         this.access = ContainerLevelAccess.create(inv.player.level(), pos);
     }
 
@@ -38,8 +46,10 @@ public class VendingMachineMenu extends AbstractContainerMenu {
     public VendingMachineMenu(int id, Inventory inv, FriendlyByteBuf buf) {
         super(Registration.VENDING_MACHINE_MENU.get(), id);
         this.access = ContainerLevelAccess.NULL;
+        this.machinePos = null;
         this.type = buf.readEnum(MachineType.class);
         this.rarity = buf.readEnum(Rarity.class);
+        this.closeAt = buf.readLong();
         int count = buf.readVarInt();
         List<Article> list = new ArrayList<>();
         for (int i = 0; i < count; i++) {
@@ -68,9 +78,20 @@ public class VendingMachineMenu extends AbstractContainerMenu {
         return rarity;
     }
 
-    public static void writeOpenData(FriendlyByteBuf buf, List<Article> stock, MachineType type, Rarity rarity) {
+    /** Stand closing game-time (client side), or -1. The screen turns this into a live countdown. */
+    public long closeAt() {
+        return closeAt;
+    }
+
+    /** Server side: the machine this menu trades with ({@code null} client side). */
+    public BlockPos machinePos() {
+        return machinePos;
+    }
+
+    public static void writeOpenData(FriendlyByteBuf buf, List<Article> stock, MachineType type, Rarity rarity, long closeAt) {
         buf.writeEnum(type);
         buf.writeEnum(rarity);
+        buf.writeLong(closeAt);
         buf.writeVarInt(stock.size());
         for (Article a : stock) {
             a.write(buf);
@@ -80,6 +101,14 @@ public class VendingMachineMenu extends AbstractContainerMenu {
     @Override
     public boolean clickMenuButton(Player player, int buttonId) {
         if (buttonId < 0 || buttonId >= stock.size() || !(player instanceof ServerPlayer serverPlayer)) {
+            return false;
+        }
+        // The stand can close while this menu is open — after that, no sale.
+        boolean closedNow = this.access.evaluate((lvl, p) ->
+                lvl.getBlockEntity(p) instanceof VendingMachineBlockEntity machine && machine.isClosed(), false);
+        if (closedNow) {
+            serverPlayer.displayClientMessage(
+                    Component.literal("This stand has closed for good.").withStyle(ChatFormatting.RED), true);
             return false;
         }
         Article article = stock.get(buttonId);

@@ -21,6 +21,13 @@ public class LuckyExperienceBottleItem extends Item {
         super(props);
     }
 
+    /** Always show the enchantment glint — the designer's call, to read as a special/"charged" bottle
+     *  and sit closer to vanilla's enchanted-looking consumables. */
+    @Override
+    public boolean isFoil(ItemStack stack) {
+        return true;
+    }
+
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack held = player.getItemInHand(hand);

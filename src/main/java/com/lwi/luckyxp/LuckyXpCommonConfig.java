@@ -40,6 +40,8 @@ public final class LuckyXpCommonConfig {
         public final ForgeConfigSpec.IntValue weightRare;
         public final ForgeConfigSpec.IntValue weightEpic;
         public final ForgeConfigSpec.IntValue weightLegendary;
+        public final ForgeConfigSpec.IntValue permLuckCap;
+        public final ForgeConfigSpec.IntValue standTimerSeconds;
 
         public final ForgeConfigSpec.IntValue baseXp;
         public final ForgeConfigSpec.IntValue legendaryMultiplier;
@@ -88,6 +90,17 @@ public final class LuckyXpCommonConfig {
                             "At 4 (3.9% of stands) a long game meets ~2.8 of them and only 6% of players meet none;",
                             "at the old value of 1, half the players never saw a single one.")
                     .defineInRange("weightLegendary", 4, 0, 1000);
+            permLuckCap = b.comment(
+                            "Maximum PERMANENT luck (%) a player can accumulate from the merchant's permanent-luck",
+                            "service. Each purchase adds +1-3%; once this cap is reached the service refuses (no",
+                            "charge). The temporary luck boost is separate and uncapped. 0 = no permanent luck at all.")
+                    .defineInRange("permLuckCap", 10, 0, 100);
+            standTimerSeconds = b.comment(
+                            "Once a stand is first interacted with (machine OR merchant), it stays open for this",
+                            "many seconds, then closes FOR GOOD (both go inert). This is the anti-farm: a stand is",
+                            "a one-time treasure window, not a shop to come back to after grinding levels. The",
+                            "countdown shows on the stand's floating display; the decor burns down as it runs.")
+                    .defineInRange("standTimerSeconds", 180, 10, 3600);
             b.pop();
 
             b.comment("Lucky XP earned for breaking a lucky block -- the vending machines' currency.")
