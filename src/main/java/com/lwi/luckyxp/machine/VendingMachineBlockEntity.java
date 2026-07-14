@@ -35,6 +35,10 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
     private long closeAt = -1;
     /** Once true the stand is gone for good — machine and merchant both refuse (see {@link StandTimer}). */
     private boolean closed = false;
+    /** Game time at which the just-opened sale tray shuts again, or -1 when closed. */
+    private long trayCloseAt = -1;
+    /** How long the tray stays open after a sale (the item drops out during this window). */
+    private static final int TRAY_OPEN_TICKS = 50;      // ~2.5 s
 
     public VendingMachineBlockEntity(BlockPos pos, BlockState state) {
         super(Registration.VENDING_MACHINE_BE.get(), pos, state);
@@ -166,6 +170,37 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         }
     }
 
+    // ---- sale tray (the lower half opens for a few seconds while the item drops out) ----
+
+    /** Open the dispensing tray after a sale; the item is dropped in the world (see the menu), and the
+     *  tray shuts again after {@link #TRAY_OPEN_TICKS}. */
+    public void openTray(net.minecraft.server.level.ServerLevel level) {
+        setOpenState(true);
+        trayCloseAt = level.getGameTime() + TRAY_OPEN_TICKS;
+        setChanged();
+    }
+
+    /** Ticked once a tick: shut the tray once its window elapses. */
+    public void tickTray(net.minecraft.server.level.ServerLevel level) {
+        if (trayCloseAt >= 0 && level.getGameTime() >= trayCloseAt) {
+            setOpenState(false);
+            trayCloseAt = -1;
+            setChanged();
+        }
+    }
+
+    /** Flip the lower half's {@code OPEN} block-state (the tray body), clients-only + no neighbour
+     *  updates like the rarity/closed swaps. Only the lower half carries the tray model. */
+    private void setOpenState(boolean open) {
+        if (level == null || level.isClientSide) {
+            return;
+        }
+        BlockState s = getBlockState();
+        if (s.getBlock() instanceof VendingMachineBlock && s.getValue(VendingMachineBlock.OPEN) != open) {
+            level.setBlock(worldPosition, s.setValue(VendingMachineBlock.OPEN, open), 2 | 16);
+        }
+    }
+
     /**
      * Carry the stand's open-window across a machine TYPE conversion: the merchant's convert service
      * replaces the block, which creates a FRESH block entity — without this, the countdown silently
@@ -233,6 +268,7 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         tag.putString("Rarity", rarity.name());
         tag.putLong("CloseAt", closeAt);
         tag.putBoolean("Closed", closed);
+        tag.putLong("TrayCloseAt", trayCloseAt);
     }
 
     @Override
@@ -242,6 +278,7 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         rarity = parseRarity(tag.getString("Rarity"));
         closeAt = tag.contains("CloseAt") ? tag.getLong("CloseAt") : -1;
         closed = tag.getBoolean("Closed");
+        trayCloseAt = tag.contains("TrayCloseAt") ? tag.getLong("TrayCloseAt") : -1;
         stock = new ArrayList<>();
         ListTag list = tag.getList("Stock", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++) {

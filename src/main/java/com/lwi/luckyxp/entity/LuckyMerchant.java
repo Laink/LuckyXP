@@ -5,6 +5,9 @@ import com.lwi.luckyxp.machine.VendingMachineBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -49,10 +52,30 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
 
     private BlockPos machinePos = BlockPos.ZERO;
 
+    /** Set at the stand's ruin (timer end): swaps the merchant to his blown-up texture. Synced so the
+     *  client renderer picks the exploded skin; persisted so a ruined stand stays ruined on reload. */
+    private static final EntityDataAccessor<Boolean> EXPLODED =
+            SynchedEntityData.defineId(LuckyMerchant.class, EntityDataSerializers.BOOLEAN);
+
     public LuckyMerchant(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
         setPersistenceRequired();
         setInvulnerable(true);
+    }
+
+    @Override
+    protected void defineSynchedData() {
+        super.defineSynchedData();
+        this.entityData.define(EXPLODED, false);
+    }
+
+    /** Blow him up (ruined-stand state) — cosmetic only; he already refuses all trades once closed. */
+    public void setExploded(boolean exploded) {
+        this.entityData.set(EXPLODED, exploded);
+    }
+
+    public boolean isExploded() {
+        return this.entityData.get(EXPLODED);
     }
 
     /** Play the SALE animation once, then fall back to idle (server-side; GeckoLib syncs it to viewers). */
@@ -167,11 +190,13 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
     public void addAdditionalSaveData(CompoundTag tag) {
         super.addAdditionalSaveData(tag);
         tag.putLong("MachinePos", machinePos.asLong());
+        tag.putBoolean("Exploded", isExploded());
     }
 
     @Override
     public void readAdditionalSaveData(CompoundTag tag) {
         super.readAdditionalSaveData(tag);
         machinePos = BlockPos.of(tag.getLong("MachinePos"));
+        setExploded(tag.getBoolean("Exploded"));
     }
 }

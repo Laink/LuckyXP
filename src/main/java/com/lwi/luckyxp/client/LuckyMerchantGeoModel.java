@@ -11,6 +11,9 @@ public class LuckyMerchantGeoModel extends GeoModel<LuckyMerchant> {
             new ResourceLocation(LuckyXpMod.MODID, "geo/lucky_merchant.geo.json");
     private static final ResourceLocation TEXTURE =
             new ResourceLocation(LuckyXpMod.MODID, "textures/entity/lucky_merchant.png");
+    /** Shown once the stand ruins (timer end); see {@link LuckyMerchant#isExploded}. */
+    private static final ResourceLocation TEXTURE_EXPLODED =
+            new ResourceLocation(LuckyXpMod.MODID, "textures/entity/lucky_merchant_exploded.png");
     private static final ResourceLocation ANIMATION =
             new ResourceLocation(LuckyXpMod.MODID, "animations/lucky_merchant.animation.json");
 
@@ -21,7 +24,7 @@ public class LuckyMerchantGeoModel extends GeoModel<LuckyMerchant> {
 
     @Override
     public ResourceLocation getTextureResource(LuckyMerchant animatable) {
-        return TEXTURE;
+        return animatable.isExploded() ? TEXTURE_EXPLODED : TEXTURE;
     }
 
     @Override

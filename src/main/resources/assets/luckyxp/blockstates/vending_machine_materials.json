@@ -1,9 +1,13 @@
 {
   "variants": {
-    "half=lower,facing=north": {"model": "luckyxp:block/vending_machine_bottom"},
-    "half=lower,facing=east": {"model": "luckyxp:block/vending_machine_bottom", "y": 90},
-    "half=lower,facing=south": {"model": "luckyxp:block/vending_machine_bottom", "y": 180},
-    "half=lower,facing=west": {"model": "luckyxp:block/vending_machine_bottom", "y": 270},
+    "half=lower,open=false,facing=north": {"model": "luckyxp:block/vending_machine_bottom"},
+    "half=lower,open=true,facing=north": {"model": "luckyxp:block/vending_machine_bottom_open"},
+    "half=lower,open=false,facing=east": {"model": "luckyxp:block/vending_machine_bottom", "y": 90},
+    "half=lower,open=true,facing=east": {"model": "luckyxp:block/vending_machine_bottom_open", "y": 90},
+    "half=lower,open=false,facing=south": {"model": "luckyxp:block/vending_machine_bottom", "y": 180},
+    "half=lower,open=true,facing=south": {"model": "luckyxp:block/vending_machine_bottom_open", "y": 180},
+    "half=lower,open=false,facing=west": {"model": "luckyxp:block/vending_machine_bottom", "y": 270},
+    "half=lower,open=true,facing=west": {"model": "luckyxp:block/vending_machine_bottom_open", "y": 270},
     "half=upper,closed=false,rarity=common,facing=north": {"model": "luckyxp:block/vending_machine_top_materials_common"},
     "half=upper,closed=false,rarity=common,facing=east": {"model": "luckyxp:block/vending_machine_top_materials_common", "y": 90},
     "half=upper,closed=false,rarity=common,facing=south": {"model": "luckyxp:block/vending_machine_top_materials_common", "y": 180},

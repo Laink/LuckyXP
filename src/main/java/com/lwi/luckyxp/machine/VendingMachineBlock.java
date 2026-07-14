@@ -45,6 +45,9 @@ public class VendingMachineBlock extends BaseEntityBlock {
     /** Once the stand's timer closes, the upper half swaps to the universal "404" screen (see
      *  {@link VendingMachineBlockEntity#markClosed}). Overrides the rarity screen in the blockstate. */
     public static final BooleanProperty CLOSED = BooleanProperty.create("closed");
+    /** Briefly true after a sale: the lower half shows the open-tray body while the item drops out
+     *  (see {@link VendingMachineBlockEntity#openTray}). */
+    public static final BooleanProperty OPEN = BooleanProperty.create("open");
     private final MachineType type;
 
     public VendingMachineBlock(Properties props, MachineType type) {
@@ -52,7 +55,7 @@ public class VendingMachineBlock extends BaseEntityBlock {
         this.type = type;
         this.registerDefaultState(this.stateDefinition.any()
                 .setValue(HALF, DoubleBlockHalf.LOWER).setValue(FACING, Direction.NORTH)
-                .setValue(RARITY, Rarity.COMMON).setValue(CLOSED, false));
+                .setValue(RARITY, Rarity.COMMON).setValue(CLOSED, false).setValue(OPEN, false));
     }
 
     public MachineType getMachineType() {
@@ -61,7 +64,7 @@ public class VendingMachineBlock extends BaseEntityBlock {
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(HALF, FACING, RARITY, CLOSED);
+        builder.add(HALF, FACING, RARITY, CLOSED, OPEN);
     }
 
     @Override
@@ -183,6 +186,7 @@ public class VendingMachineBlock extends BaseEntityBlock {
         return (lvl, pos, st, be) -> {
             if (be instanceof VendingMachineBlockEntity machine && lvl instanceof net.minecraft.server.level.ServerLevel server) {
                 StandTimer.tick(server, pos, machine);
+                machine.tickTray(server);                   // close the sale-tray after its brief window
             }
         };
     }

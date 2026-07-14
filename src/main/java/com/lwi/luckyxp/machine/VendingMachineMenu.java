@@ -4,15 +4,19 @@ import com.lwi.luckyxp.Registration;
 import com.lwi.luckyxp.api.LuckyXpApi;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -115,12 +119,6 @@ public class VendingMachineMenu extends AbstractContainerMenu {
         if (article.stack().isEmpty() || article.sold()) {      // every line is a single purchase
             return false;
         }
-        // No room, no sale: paying for an item that lands on the ground is how hardcore items burn.
-        if (!canFit(serverPlayer, article)) {
-            serverPlayer.displayClientMessage(
-                    Component.literal("Inventory full!").withStyle(ChatFormatting.RED), true);
-            return false;
-        }
         // Creative buys for free (the vanilla-anvil convention) — for testing and map-making.
         if (!serverPlayer.getAbilities().instabuild) {
             if (LuckyXpApi.getLevel(serverPlayer) < article.costLevels()) {
@@ -130,39 +128,37 @@ public class VendingMachineMenu extends AbstractContainerMenu {
                 return false;
             }
         }
-        ItemStack give = article.stack().copy();
-        if (!serverPlayer.getInventory().add(give)) {
-            serverPlayer.drop(give, false);                     // canFit raced: never lose the purchase
-        }
-        if (!article.extra().isEmpty()) {                       // bundled bonus (e.g. XP-pump's tank)
-            ItemStack bonus = article.extra().copy();
-            if (!serverPlayer.getInventory().add(bonus)) {
-                serverPlayer.drop(bonus, false);
-            }
-        }
-        // Mark the line SOLD on the block entity — the server-side menu list IS the BE's list, so
-        // this menu (and any other open one) sees it immediately, and it persists.
+        // The machine DROPS the goods out of its tray onto the ground — never straight into the bag. In
+        // hardcore that is a real hazard (fire, lava, a mob snatching it): the buyer must be there to
+        // catch it. Marks the line SOLD and opens the tray for a few seconds.
         access.execute((level, pos) -> {
+            BlockState st = level.getBlockState(pos);
+            Direction facing = st.getBlock() instanceof VendingMachineBlock
+                    ? st.getValue(VendingMachineBlock.FACING) : Direction.NORTH;
+            dropOutOfTray(level, pos, facing, article.stack().copy());
+            if (!article.extra().isEmpty()) {
+                dropOutOfTray(level, pos, facing, article.extra().copy());
+            }
             if (level.getBlockEntity(pos) instanceof VendingMachineBlockEntity be) {
                 be.markSold(buttonId);
+                if (level instanceof ServerLevel server) {
+                    be.openTray(server);
+                }
             }
         });
-        // The trade screen has no player-inventory slots, so the active menu never syncs them — the
-        // item would only "appear" on close. Broadcast the inventory menu explicitly instead.
-        serverPlayer.inventoryMenu.broadcastChanges();
         return true;
     }
 
-    /** Whether the article (stack + bonus) fits the player's 36 main slots, simulated on a copy. */
-    private static boolean canFit(ServerPlayer player, Article article) {
-        SimpleContainer sim = new SimpleContainer(36);
-        for (int i = 0; i < 36; i++) {
-            sim.setItem(i, player.getInventory().items.get(i).copy());
-        }
-        if (!sim.addItem(article.stack().copy()).isEmpty()) {
-            return false;
-        }
-        return article.extra().isEmpty() || sim.addItem(article.extra().copy()).isEmpty();
+    /** Spit an item out of the machine's tray: ground level, just in front of the facing side, with a
+     *  small outward nudge so it lands clear of the block. */
+    private static void dropOutOfTray(Level level, BlockPos pos, Direction facing, ItemStack stack) {
+        double x = pos.getX() + 0.5 + facing.getStepX() * 0.75;
+        double y = pos.getY() + 0.2;
+        double z = pos.getZ() + 0.5 + facing.getStepZ() * 0.75;
+        ItemEntity item = new ItemEntity(level, x, y, z, stack);
+        item.setDeltaMovement(facing.getStepX() * 0.1, 0.05, facing.getStepZ() * 0.1);
+        item.setPickUpDelay(10);
+        level.addFreshEntity(item);
     }
 
     @Override

@@ -14,10 +14,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.AttachFace;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.feature.Feature;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
@@ -42,14 +39,14 @@ import org.slf4j.Logger;
 public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
     private static final Logger LOGGER = LogUtils.getLogger();
     public static final ResourceLocation TEMPLATE = new ResourceLocation(LuckyXpMod.MODID, "vending_stand");
+    /** The designer's ruined stall, swapped in when the timer closes (see {@code StandTimer.close}). */
+    public static final ResourceLocation BROKEN_TEMPLATE = new ResourceLocation(LuckyXpMod.MODID, "vending_stand_broken");
 
     /** Template footprint (X, Y, Z) and the buried depth. */
     public static final int SIZE_X = 8, SIZE_Y = 12, SIZE_Z = 9, BURIED = 3;
     /** The machine's LOWER half, relative to the structure's lower corner. */
     public static final BlockPos MACHINE_OFFSET = new BlockPos(1, 3, 3);
     private static final BlockPos MERCHANT_OFFSET = new BlockPos(4, 3, 3);
-    /** East face of the bubble-column's top block — where the dropped wall lever is re-placed. */
-    private static final BlockPos LEVER_OFFSET = new BlockPos(2, 5, 5);
 
     /** Max ground-height spread across the footprint before the spot is rejected. */
     private static final int MAX_UNEVENNESS = 2;
@@ -112,14 +109,6 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
         //    connection, so nothing needs a shape-update to look right.
         StructurePlaceSettings settings = new StructurePlaceSettings().setKnownShape(true);
         tpl.placeInWorld(level, origin, origin, settings, level.getRandom(), 2 | 16);
-
-        // Restore the wall lever on the column's east face. The designer's soul-fire → bubble-column
-        // swap dropped it (a lever can't attach to water, so it fell in his world and his export shows a
-        // blank sign there now). We re-place it at the same spot/state, flag 2|16 so it holds against the
-        // column like the rest of the stall's decor — no export round-trip needed.
-        level.setBlock(origin.offset(LEVER_OFFSET), Blocks.LEVER.defaultBlockState()
-                .setValue(BlockStateProperties.ATTACH_FACE, AttachFace.WALL)
-                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.EAST), 2 | 16);
 
         // Swap the template's placeholder machine to the rolled TYPE, keeping the designer's states
         // (facing/half) — the same withPropertiesOf recipe as the merchant's paid type conversion —

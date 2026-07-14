@@ -364,15 +364,11 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
                     flash(idx);
                     playClick(0.6F);
                 } else if (isCreative() || ClientXpCache.level >= a.costLevels()) {
-                    if (clientCanFit(a)) {
-                        buy(idx);
-                        menu.markSoldLocal(idx);                // immediate SOLD feedback; server is authoritative
-                        playPurchase();                         // the cash-register "cha-ching"
-                    } else {
-                        flash(idx);
-                        toast("INVENTORY FULL");                // on top of the dim overlay, not the actionbar
-                        playClick(0.6F);
-                    }
+                    // The goods drop out of the tray onto the ground, so inventory space is never a
+                    // blocker — the sale always goes through if it's affordable.
+                    buy(idx);
+                    menu.markSoldLocal(idx);                    // immediate SOLD feedback; server is authoritative
+                    playPurchase();                             // the cash-register "cha-ching"
                 } else {
                     playClick(0.6F);
                 }
@@ -385,22 +381,6 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
     /** Creative mode buys everything for free — mirror of the server-side instabuild bypass. */
     private boolean isCreative() {
         return minecraft != null && minecraft.player != null && minecraft.player.getAbilities().instabuild;
-    }
-
-    /** Client-side mirror of the menu's canFit: simulate the article landing in the 36 main slots,
-     *  so a full inventory is refused (and explained) instantly instead of failing silently. */
-    private boolean clientCanFit(Article a) {
-        if (minecraft == null || minecraft.player == null) {
-            return true;                                    // no player to check: let the server decide
-        }
-        net.minecraft.world.SimpleContainer sim = new net.minecraft.world.SimpleContainer(36);
-        for (int i = 0; i < 36; i++) {
-            sim.setItem(i, minecraft.player.getInventory().items.get(i).copy());
-        }
-        if (!sim.addItem(a.stack().copy()).isEmpty()) {
-            return false;
-        }
-        return a.extra().isEmpty() || sim.addItem(a.extra().copy()).isEmpty();
     }
 
     @Override

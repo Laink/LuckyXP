@@ -14,6 +14,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
@@ -89,7 +91,7 @@ public final class StandTimer {
                 if (now % 20 == 0) {
                     beep(level, machinePos, (secondsLeft % 2 == 0) ? 1.5F : 0.9F);
                 }
-            } else if (secondsLeft >= 1 && now % 10 == 0) {
+            } else if (secondsLeft >= 1 && now % 5 == 0) {     // last 3 s: fast same-tone hammer (4×/s)
                 beep(level, machinePos, 1.5F);
             }
         } else if (now % 20 == 0) {
@@ -159,22 +161,43 @@ public final class StandTimer {
         }
     }
 
-    /** Terminal: burn the rest, light the buried smoke system, pop a few harmless blasts, go inert. */
+    /**
+     * Terminal ruin: swap the whole stall for the designer's broken template, blow up the merchant,
+     * pop a few harmless blasts, and boot any open screen — all at once, on the blast.
+     */
     private static void close(ServerLevel level, BlockPos machinePos, VendingMachineBlockEntity be) {
-        be.markClosed();
-        for (BlockPos pos : woolPositions(level, machinePos)) {
-            flipWool(level, pos);
-        }
-        // Light every campfire in the volume — including the designer's buried ones, whose smoke rises
-        // up through the stall (that is what the bottom 3 template layers are for).
+        be.markClosed();                                     // gate the current BE first (in case placement fails)
         BlockPos origin = machinePos.subtract(VendingStandFeature.MACHINE_OFFSET);
-        for (BlockPos p : BlockPos.betweenClosed(origin,
-                origin.offset(VendingStandFeature.SIZE_X - 1, VendingStandFeature.SIZE_Y - 1, VendingStandFeature.SIZE_Z - 1))) {
-            BlockState s = level.getBlockState(p);
-            if (s.getBlock() instanceof CampfireBlock && !s.getValue(CampfireBlock.LIT)) {
-                level.setBlock(p, s.setValue(CampfireBlock.LIT, true), FLIP_FLAGS);
+
+        // Replace the stall with the ruined version (verbatim, like the base placement). It drops a
+        // FRESH machine BE on the machine spot, so re-close it: keeps the 404 screen + inert + re-arms
+        // the indestructible region (StandProtection registers on the new BE's onLoad).
+        StructureTemplate broken = level.getServer().getStructureManager().get(VendingStandFeature.BROKEN_TEMPLATE).orElse(null);
+        if (broken != null) {
+            // Drain any water in the box FIRST (the base's bubble column reverts to a plain water source
+            // the instant it's disturbed). The ruined template is 60% air, so an undrained source would
+            // spill through its open walls. Flag 2|16 = no flow triggered.
+            for (BlockPos p : BlockPos.betweenClosed(origin,
+                    origin.offset(VendingStandFeature.SIZE_X - 1, VendingStandFeature.SIZE_Y - 1, VendingStandFeature.SIZE_Z - 1))) {
+                if (!level.getFluidState(p).isEmpty()) {
+                    level.setBlock(p, Blocks.AIR.defaultBlockState(), 2 | 16);
+                }
+            }
+            broken.placeInWorld(level, origin, origin, new StructurePlaceSettings().setKnownShape(true), level.getRandom(), 2 | 16);
+            if (level.getBlockEntity(machinePos) instanceof VendingMachineBlockEntity fresh) {
+                fresh.markClosed();
             }
         }
+
+        // The floating timer display and the standing merchant become the ruin: drop the display, and
+        // switch the merchant to his blown-up skin (he already refuses everything once closed).
+        for (Display.TextDisplay d : level.getEntitiesOfClass(Display.TextDisplay.class, standBox(machinePos))) {
+            d.discard();
+        }
+        for (com.lwi.luckyxp.entity.LuckyMerchant m : level.getEntitiesOfClass(com.lwi.luckyxp.entity.LuckyMerchant.class, standBox(machinePos))) {
+            m.setExploded(true);
+        }
+
         // A few cosmetic bangs (non-destructive) spread over the stall.
         AABB box = standBox(machinePos);
         RandomSource rng = level.random;
@@ -184,7 +207,6 @@ public final class StandTimer {
             double y = machinePos.getY() + rng.nextDouble() * 2.0;
             level.explode(null, x, y, z, 1.5F, Level.ExplosionInteraction.NONE);
         }
-        setDisplay(level, machinePos, "CLOSED", ChatFormatting.RED);
         closeOpenScreens(level, machinePos);                 // kick any open screen right on the blast
     }
 }
