@@ -9,6 +9,8 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
@@ -52,6 +54,12 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
 
     private BlockPos machinePos = BlockPos.ZERO;
 
+    /** A pitched two-note villager "voice" fired on a sale — a deranged-genius cackle, not a real
+     *  villager. The first note plays with {@link #playSale()}; the second is fired a few ticks later
+     *  from {@link #tick()} so the pair lands as a little "he-HEE!" instead of one muddy blob. */
+    private int cackleAt = -1;
+    private float cacklePitch = 1.6F;
+
     /** Set at the stand's ruin (timer end): swaps the merchant to his blown-up texture. Synced so the
      *  client renderer picks the exploded skin; persisted so a ruined stand stays ruined on reload. */
     private static final EntityDataAccessor<Boolean> EXPLODED =
@@ -78,9 +86,26 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
         return this.entityData.get(EXPLODED);
     }
 
-    /** Play the SALE animation once, then fall back to idle (server-side; GeckoLib syncs it to viewers). */
+    /** Play the SALE animation once, then fall back to idle (server-side; GeckoLib syncs it to viewers).
+     *  Also gives a pitched villager "hehe!" — a high, slightly random cackle for the mad-scientist vibe
+     *  (he's meant to be unpredictable). The follow-up note is scheduled in {@link #tick()}. */
     public void playSale() {
         triggerAnim(CONTROLLER, ANIM_SALE);
+        if (!level().isClientSide) {
+            float p1 = 1.4F + random.nextFloat() * 0.4F;              // 1.4–1.8: high, giddy
+            level().playSound(null, blockPosition(), SoundEvents.VILLAGER_YES, SoundSource.NEUTRAL, 1.0F, p1);
+            cacklePitch = Math.min(2.0F, p1 + 0.2F);                  // second note a touch higher: "he-HEE!"
+            cackleAt = tickCount + 4;
+        }
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (!level().isClientSide && cackleAt >= 0 && tickCount >= cackleAt) {
+            cackleAt = -1;
+            level().playSound(null, blockPosition(), SoundEvents.VILLAGER_YES, SoundSource.NEUTRAL, 1.0F, cacklePitch);
+        }
     }
 
     @Override

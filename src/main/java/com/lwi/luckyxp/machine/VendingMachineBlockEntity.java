@@ -38,7 +38,7 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
     /** Game time at which the just-opened sale tray shuts again, or -1 when closed. */
     private long trayCloseAt = -1;
     /** How long the tray stays open after a sale (the item drops out during this window). */
-    private static final int TRAY_OPEN_TICKS = 50;      // ~2.5 s
+    private static final int TRAY_OPEN_TICKS = 20;      // ~1 s
 
     public VendingMachineBlockEntity(BlockPos pos, BlockState state) {
         super(Registration.VENDING_MACHINE_BE.get(), pos, state);
