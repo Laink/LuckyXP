@@ -80,11 +80,12 @@ public final class LuckyEventCommand {
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
-        // No hasPermission(2) gate: it kept the command off a LAN host who hadn't been op'd to level 2
-        // (opening to LAN with cheats does not reliably grant it), while the pack's other dev commands
-        // like lwlocatortest carry no gate and worked fine. This is a TEST command -- it must be
-        // re-gated or removed before ship (see the pre-ship checklist), not left open on a real server.
+        // Op level 2 (cheats) gate: /luckyevent is the admin/test interface for the event and stand
+        // systems (spawn stands, grant levels, force events). Events fire on their own for players, so
+        // it is never needed in normal play. It was briefly left ungated so a non-op LAN designer could
+        // drive it during the cosmetic pass; re-gated for release so it stays off a real server.
         event.getDispatcher().register(Commands.literal("luckyevent")
+                .requires(src -> src.hasPermission(2))
                 .then(Commands.literal("stop").executes(ctx -> stop(ctx.getSource())))
                 .then(Commands.literal("status").executes(ctx -> status(ctx.getSource())))
                 .then(Commands.literal("roll").executes(ctx -> forceRoll(ctx.getSource())))
