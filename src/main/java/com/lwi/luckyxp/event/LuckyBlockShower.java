@@ -1,6 +1,7 @@
 package com.lwi.luckyxp.event;
 
 import com.lwi.luckytweaks.api.LuckyTweaksApi;
+import com.lwi.luckyxp.LuckyXpCommonConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
@@ -51,10 +52,18 @@ public final class LuckyBlockShower {
     /**
      * Schedule a shower around every online player. {@code block == null} = a mega-jackpot assortment
      * (random types). {@code xpMult > 0} marks the blocks as ×mult XP; otherwise they're infused to
-     * {@code luckRaw} Luck. {@code count} blocks per player.
+     * {@code luckRaw} Luck. {@code count} is the SOLO haul: in multiplayer each player's share is scaled
+     * down so the team's TOTAL grows as {@code count * N^multiplayerScaling} rather than {@code count * N}.
      */
     public static void shower(MinecraftServer server, @Nullable ResourceLocation block, boolean isXp,
                               int luckRaw, float xpMult, int count, boolean mega) {
+        // Players here stay close together and pool what they find, so a full solo-sized shower each
+        // buries a team (four of them walked into 80 blocks at a jackpot). Shrink the per-player share.
+        int online = Math.max(1, server.getPlayerList().getPlayerCount());
+        int perPlayer = online > 1
+                ? Math.max(1, (int) Math.round(count * Math.pow(online,
+                        LuckyXpCommonConfig.COMMON.multiplayerScaling.get() - 1.0)))
+                : count;
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             ServerLevel level = player.serverLevel();
             RandomSource rng = level.getRandom();
@@ -68,7 +77,7 @@ public final class LuckyBlockShower {
                 }
             }
             List<BlockPos> chosen = new ArrayList<>();
-            for (int i = 0; i < count; i++) {
+            for (int i = 0; i < perPlayer; i++) {
                 BlockPos pos = findSpot(level, player.blockPosition(), rng, chosen);
                 if (pos == null) {
                     continue;

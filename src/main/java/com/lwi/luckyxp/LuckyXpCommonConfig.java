@@ -33,6 +33,7 @@ public final class LuckyXpCommonConfig {
         public final ForgeConfigSpec.IntValue pityDays;
         public final ForgeConfigSpec.IntValue windowStart;
         public final ForgeConfigSpec.IntValue windowEnd;
+        public final ForgeConfigSpec.DoubleValue multiplayerScaling;
 
         public final ForgeConfigSpec.IntValue standChance;
         public final ForgeConfigSpec.BooleanValue debugFullStock;
@@ -62,6 +63,16 @@ public final class LuckyXpCommonConfig {
                     .defineInRange("windowStart", 1200, 0, 23999);
             windowEnd = b.comment("Latest moment of the day the roulette may start, in day-time ticks after dawn. Kept in the morning so the spawned blocks can be opened before night.")
                     .defineInRange("windowEnd", 4800, 1, 24000);
+            multiplayerScaling = b.comment(
+                            "How an event's haul grows with the number of players online. Blocks are placed around",
+                            "each player, so the event's TOTAL is count x N^thisValue, and each player is given",
+                            "count x N^(thisValue-1) blocks.",
+                            "1.0 = every player gets a full solo-sized share, so the total is N times a solo event.",
+                            "0.5 (default) = the total grows with the square root of the team: four players find",
+                            "twice a solo event, not four times. Players here stay close together and pool what they",
+                            "find, so multiplying it outright buries them in blocks.",
+                            "0.0 = the whole team shares one solo-sized event.")
+                    .defineInRange("multiplayerScaling", 0.5, 0.0, 1.0);
             b.pop();
 
             b.comment("Vending-machine worldgen (the market stands).")
