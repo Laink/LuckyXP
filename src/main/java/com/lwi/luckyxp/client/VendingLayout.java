@@ -35,6 +35,9 @@ public final class VendingLayout {
             cTxt = 0xFF6CF08A, cTxtDim = 0xFF3C8F5A, cTxtLock = 0xFF2E6B45,
             cHover = 0x335CF08A, cScanDark = 0x1A000000, cScanLine = 0x335CF08A,
             cSbTrack = 0xFF0C2A18, cSbThumb = 0xFF2BBF5A;
+    // Lucky-XP accents (designer 2026-07-18): prices/level in the orb's blue, distinct locked shades.
+    public int cCost = 0xFF87ECFF, cCostLock = 0xFF3784A8, cCostOutline = 0xFF03130B,
+            cNameLock = 0xFF459A58, cLvl = 0xFF87ECFF, cTimer = 0xFFD4F3DB;
 
     private VendingLayout() {}
 
@@ -105,6 +108,12 @@ public final class VendingLayout {
         cScanLine = col(o, "c_scan_line", cScanLine);
         cSbTrack = col(o, "c_sb_track", cSbTrack);
         cSbThumb = col(o, "c_sb_thumb", cSbThumb);
+        cCost = col(o, "c_cost", cCost);
+        cCostLock = col(o, "c_cost_lock", cCostLock);
+        cCostOutline = col(o, "c_cost_outline", cCostOutline);
+        cNameLock = col(o, "c_name_lock", cNameLock);
+        cLvl = col(o, "c_lvl", cLvl);
+        cTimer = col(o, "c_timer", cTimer);
     }
 
     private static int i(JsonObject o, String k, int d) {

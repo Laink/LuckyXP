@@ -4,10 +4,13 @@ import com.lwi.luckyxp.machine.Article;
 import com.lwi.luckyxp.machine.MachineType;
 import com.lwi.luckyxp.machine.Rarity;
 import com.lwi.luckyxp.machine.VendingMachineMenu;
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -23,6 +26,13 @@ import java.util.List;
  * on each open — edit the JSON, F3+T, reopen the machine.
  */
 public class VendingMachineScreen extends AbstractContainerScreen<VendingMachineMenu> {
+    /** The lucky-XP orb hugging each price (designer 2026-07-18): lit when affordable, dark when not. */
+    private static final ResourceLocation XP_ICON =
+            new ResourceLocation("luckyxp", "textures/gui/lucky_xp_icon.png");
+    private static final ResourceLocation XP_ICON_OFF =
+            new ResourceLocation("luckyxp", "textures/gui/lucky_xp_icon_off.png");
+    private static final int XP_ICON_SIZE = 9;
+
     private final VendingLayout L;
     private int animTicks;
     private int scrollRow;
@@ -31,10 +41,9 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
     // Purchase feedback (client-only, wall-clock timed so it is framerate-independent).
     private int flashRow = -1;
     private long flashUntilMs;
-    private String toast;
-    private long toastUntilMs;
     private static final long FLASH_MS = 450L;
-    private static final long TOAST_MS = 1600L;
+    /** On-top message plate (server feedback rerouted here by {@link ScreenMessageRouter}). */
+    private final ScreenToast toast = new ScreenToast();
 
     public VendingMachineScreen(VendingMachineMenu menu, Inventory inv, Component title) {
         super(menu, inv, title);
@@ -83,32 +92,15 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
         renderFooter(g);
         renderScanlines(g, pt);
         renderHoverTooltip(g, mouseX, mouseY);
-        renderToast(g);                                     // drawn last: on top of the dim overlay
+        // Drawn last: server feedback BELOW the panel (20px under it), never over the GUI itself —
+        // clamped to the screen edge for tall GUI scales where there is no room underneath.
+        toast.render(g, font, leftPos + L.panelW / 2,
+                Math.min(topPos + L.panelH + 20, this.height - 15));
     }
 
-    /** A bold message (e.g. "INVENTORY FULL") centred over the panel, above everything else, so it is
-     *  never lost behind the screen's dim background. Fades over its last third, but is cut while still
-     *  clearly visible (alpha never drops near 0) — a near-transparent plate + font flickers otherwise. */
-    private void renderToast(GuiGraphics g) {
-        if (toast == null) {
-            return;
-        }
-        long left = toastUntilMs - System.currentTimeMillis();
-        if (left <= 90L) {                                  // cut before the fade reaches flicker territory
-            toast = null;
-            return;
-        }
-        int alpha = (int) Math.min(255, Math.max(70, left * 3 * 255 / TOAST_MS));   // solid, then fade to a floor of 70
-        int cx = leftPos + L.panelW / 2, cy = topPos + L.panelH / 2 - 4;
-        int w = font.width(toast);
-        int x0 = cx - w / 2 - 6, x1 = cx + w / 2 + 6, y0 = cy - 4, y1 = cy + font.lineHeight + 4;
-        int edge = (alpha << 24) | 0xFF5555;
-        g.fill(x0, y0, x1, y1, (alpha << 24) | 0x200000);   // translucent red plate
-        g.fill(x0, y0, x1, y0 + 1, edge);                   // top
-        g.fill(x0, y1 - 1, x1, y1, edge);                   // bottom
-        g.fill(x0, y0, x0 + 1, y1, edge);                   // left
-        g.fill(x1 - 1, y0, x1, y1, edge);                   // right
-        g.drawString(this.font, toast, cx - w / 2, cy + 1, (alpha << 24) | 0xFF6060, false);
+    /** Show a message ON TOP of the screen (used by {@link ScreenMessageRouter} for action-bar feedback). */
+    public void showToast(Component message) {
+        toast.show(message);
     }
 
     private void flash(int row) {
@@ -120,11 +112,6 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
     private boolean isFlashing(int idx) {
         return idx == flashRow && System.currentTimeMillis() < flashUntilMs
                 && (System.currentTimeMillis() / 120L) % 2L == 0L;
-    }
-
-    private void toast(String text) {
-        toast = text;
-        toastUntilMs = System.currentTimeMillis() + TOAST_MS;
     }
 
     @Override
@@ -145,8 +132,8 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
         int y = topPos + L.headerTypeY;
         g.drawString(this.font, typeLabel(), leftPos + 8, y, L.cTxt, false);          // machine title, left
         String timer = timerLabel();
-        if (!timer.isEmpty()) {                                                        // countdown, right
-            g.drawString(this.font, timer, leftPos + L.panelW - 8 - font.width(timer), y, timerColor(), false);
+        if (!timer.isEmpty()) {                                                        // countdown, right (designer 2026-07-18: 1px right)
+            g.drawString(this.font, timer, leftPos + L.panelW - 7 - font.width(timer), y, timerColor(), false);
         }
     }
 
@@ -154,7 +141,7 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
      *  (in sync with the in-world display), solid red once CLOSED. */
     private int timerColor() {
         if (minecraft == null || minecraft.level == null || menu.closeAt() < 0) {
-            return L.cTxt;
+            return L.cTimer;
         }
         long remaining = menu.closeAt() - minecraft.level.getGameTime();
         if (remaining <= 0) {
@@ -164,7 +151,7 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
         if (urgent && (minecraft.level.getGameTime() / 10) % 2 == 0) {
             return 0xFFFF5555;                                                          // red on alternate half-seconds
         }
-        return L.cTxt;
+        return L.cTimer;
     }
 
     /** Live stand countdown for the header, derived each frame from the client's own synced game time
@@ -176,7 +163,7 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
         }
         long remaining = closeAt - minecraft.level.getGameTime();
         if (remaining <= 0) {
-            return "CLOSED";
+            return I18n.get("luckyxp.gui.closed");
         }
         int s = (int) (remaining / 20);
         return String.format("%02d:%02d", s / 60, s % 60);
@@ -185,7 +172,7 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
     private void renderList(GuiGraphics g, int mouseX, int mouseY) {
         List<Article> stock = menu.getStock();
         if (stock.isEmpty()) {
-            centered(g, "-- EMPTY --", leftPos + L.panelW / 2, topPos + L.listTop + 50, L.cTxtDim);
+            centered(g, I18n.get("luckyxp.gui.empty"), leftPos + L.panelW / 2, topPos + L.listTop + 50, L.cTxtDim);
             return;
         }
         int level = ClientXpCache.level;
@@ -210,29 +197,60 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
             ItemStack stack = a.stack();
             int ix = leftPos + L.iconX;
             int iy = rowY + L.iconYOff;
+            boolean locked = !sold && !afford;
+            if (locked) {
+                // Best-effort dimming of the item render (designer 2026-07-18). The shader colour is a
+                // global multiplier the item pipeline honours for most models; if some don't, they just
+                // stay full-bright — no harm done.
+                RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 0.55F);
+            }
             g.renderItem(stack, ix, iy);
             g.renderItemDecorations(this.font, stack, ix, iy);
+            if (locked) {
+                RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+            }
 
-            String cost = sold ? "SOLD" : a.costLevels() + " lvl";
+            // Price = the bare number in lucky-XP blue with its dark outline, an XP orb hugging its
+            // left (lit or dark with affordability). SOLD keeps its plain label — it is not a price.
+            String cost = sold ? I18n.get("luckyxp.gui.sold") : Integer.toString(a.costLevels());
             int costX = listRight - font.width(cost) - L.costRightPad;
             int textY = rowY + L.textYOff;
 
             // Strip embedded formatting codes (addon names carry literal colour/bold codes) so every
-            // name renders in the CRT's own normalized green.
+            // name renders in the CRT's own normalized colours.
             String rawName = net.minecraft.ChatFormatting.stripFormatting(stack.getHoverName().getString());
             String name = trim(rawName != null ? rawName : stack.getHoverName().getString(),
-                    costX - (leftPos + L.nameX) - 8);
-            g.drawString(this.font, name, leftPos + L.nameX, textY, afford ? L.cTxt : L.cTxtDim, false);
-            g.drawString(this.font, cost, costX, textY, afford ? L.cTxt : L.cTxtLock, false);
+                    costX - (leftPos + L.nameX) - 14);
+            g.drawString(this.font, name, leftPos + L.nameX, textY,
+                    sold ? L.cTxtDim : (afford ? L.cTxt : L.cNameLock), false);
             if (sold) {
-                // Single-purchase line already bought: strike the name through (brightness-only
-                // feedback, consistent with the colorblind rule above).
+                g.drawString(this.font, cost, costX, textY, L.cTxtLock, false);
+                // Single-purchase line already bought: strike the name through.
                 int lineY = textY + font.lineHeight / 2 - 1;
                 g.fill(leftPos + L.nameX - 1, lineY, leftPos + L.nameX + font.width(name) + 1, lineY + 1, L.cTxtLock);
-            } else if (!afford) {
-                drawLock(g, costX - 11, textY - 1, L.cTxtLock);
+            } else {
+                // Orb BEHIND the number, the digits overlapping it by 3px — the vanilla enchanting
+                // screen's level-orb look. Drawn first so the outlined number sits on top.
+                RenderSystem.enableBlend();
+                RenderSystem.defaultBlendFunc();
+                g.blit(afford ? XP_ICON : XP_ICON_OFF, costX + 3 - XP_ICON_SIZE, rowY + (L.rowH - XP_ICON_SIZE) / 2,
+                        0.0F, 0.0F, XP_ICON_SIZE, XP_ICON_SIZE, XP_ICON_SIZE, XP_ICON_SIZE);
+                RenderSystem.disableBlend();
+                drawOutlined(g, cost, costX, textY, afford ? L.cCost : L.cCostLock, L.cCostOutline);
             }
         }
+    }
+
+    /** 8-way text outline: the outline colour stamped around, the number on top. */
+    private void drawOutlined(GuiGraphics g, String s, int x, int y, int color, int outline) {
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                if (dx != 0 || dy != 0) {
+                    g.drawString(this.font, s, x + dx, y + dy, outline, false);
+                }
+            }
+        }
+        g.drawString(this.font, s, x, y, color, false);
     }
 
     private void renderScrollbar(GuiGraphics g) {
@@ -251,10 +269,9 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
     }
 
     private void renderFooter(GuiGraphics g) {
-        String lab = "LUCKY LVL ";
-        int x = leftPos + 8, y = topPos + L.footerY;
-        g.drawString(this.font, lab, x, y, L.cTxtDim, false);                                  // label in dimmed green
-        g.drawString(this.font, Integer.toString(ClientXpCache.level), x + font.width(lab), y, L.cTxt, false);  // level in bright green
+        // One string, one colour — the lucky-XP blue (designer 2026-07-18).
+        g.drawString(this.font, I18n.get("luckyxp.gui.lucky_lvl", ClientXpCache.level),
+                leftPos + 8, topPos + L.footerY, L.cLvl, false);
         renderRarityBadge(g);
     }
 
@@ -263,7 +280,7 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
         Rarity r = menu.getRarity();
         int rgb = r.pillColor();
         int argb = 0xFF000000 | rgb;
-        String label = r.name();
+        String label = I18n.get("luckyxp.rarity." + r.getSerializedName());
         g.drawString(this.font, label, leftPos + L.rarityTextX - font.width(label), topPos + L.rarityTextY, argb, false);
         float pulse = 0.5F + 0.5F * (float) Math.sin(animTicks * L.rarityPillSpeed);
         int cx = leftPos + L.rarityPillX, cy = topPos + L.rarityPillY, rad = L.rarityPillRadius;
@@ -368,7 +385,10 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
                     // blocker — the sale always goes through if it's affordable.
                     buy(idx);
                     menu.markSoldLocal(idx);                    // immediate SOLD feedback; server is authoritative
-                    playPurchase();                             // the cash-register "cha-ching"
+                    playPurchase();                             // "cha-ching" + the tray's piston clunk
+                    // Tell the buyer WHERE their purchase went: it's on the ground, not in the bag.
+                    showToast(Component.translatable("luckyxp.gui.dispensed")
+                            .withStyle(net.minecraft.ChatFormatting.GREEN));
                 } else {
                     playClick(0.6F);
                 }
@@ -420,7 +440,8 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
     }
 
     /** A proper "cha-ching": two bright amethyst chimes an octave apart, plus the XP-orb pickup blip
-     *  underneath for the transaction feel. Played only on a successful purchase. */
+     *  underneath for the transaction feel, and a redstone-piston clunk — the machine's tray pushing
+     *  the goods out (user 2026-07-19). Played only on a successful purchase. */
     private void playPurchase() {
         if (minecraft == null) {
             return;
@@ -429,18 +450,19 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
         sm.play(SimpleSoundInstance.forUI(SoundEvents.AMETHYST_BLOCK_CHIME, 1.2F, 0.9F));
         sm.play(SimpleSoundInstance.forUI(SoundEvents.AMETHYST_BLOCK_CHIME, 1.8F, 0.7F));
         sm.play(SimpleSoundInstance.forUI(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.4F, 0.4F));
+        sm.play(SimpleSoundInstance.forUI(SoundEvents.PISTON_EXTEND, 1.1F, 0.8F));
     }
 
     // ---- helpers ----
 
     private String typeLabel() {
         MachineType t = menu.getMachineType();
-        return switch (t) {
-            case POTIONS -> "CONSUMABLES";
-            case INFUSED_LB -> "LUCKY BLOCKS";
-            case ORES -> "MINERALS";
-            case TOOLS -> "TOOLS";
-        };
+        return I18n.get(switch (t) {
+            case POTIONS -> "luckyxp.machine.type.consumables";
+            case INFUSED_LB -> "luckyxp.machine.type.lucky_blocks";
+            case ORES -> "luckyxp.machine.type.minerals";
+            case TOOLS -> "luckyxp.machine.type.tools";
+        });
     }
 
     private void centered(GuiGraphics g, String s, int cx, int y, int color) {
@@ -457,10 +479,4 @@ public class VendingMachineScreen extends AbstractContainerScreen<VendingMachine
         return s + "..";
     }
 
-    private void drawLock(GuiGraphics g, int x, int y, int color) {
-        g.fill(x, y + 3, x + 6, y + 8, color);
-        g.fill(x + 1, y, x + 2, y + 4, color);
-        g.fill(x + 4, y, x + 5, y + 4, color);
-        g.fill(x + 1, y, x + 5, y + 1, color);
-    }
 }

@@ -76,6 +76,10 @@ dependencies {
     // runs fine without JEI installed.
     compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-common-api:${jei_version}")
     compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge-api:${jei_version}")
+    // Improved Mobs, compile-only (NOT bundled): the merchant sells a difficulty cut, which has to go
+    // through the mod's own difficulty data + sync so its bottom-right readout actually moves. Soft
+    // dependency -- every reference lives in ImprovedMobsDifficulty, behind a ModList check.
+    compileOnly files("libs/improvedmobs-1.20.1-1.13.7-forge.jar")
     // GeckoLib animation library (the animated Lucky Merchant), same version the modpack ships.
     implementation "software.bernie.geckolib:geckolib-forge-1.20.1:4.7.3"
 }

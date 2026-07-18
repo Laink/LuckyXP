@@ -1,6 +1,7 @@
 package com.lwi.luckyxp.entity;
 
 import com.lwi.luckyxp.machine.MerchantMenu;
+import com.lwi.luckyxp.machine.Rarity;
 import com.lwi.luckyxp.machine.VendingMachineBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -65,6 +66,12 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
     private static final EntityDataAccessor<Boolean> EXPLODED =
             SynchedEntityData.defineId(LuckyMerchant.class, EntityDataSerializers.BOOLEAN);
 
+    /** His own rarity, rolled independently of the machine he tends: it colours his hat and discounts all
+     *  six of his services (see {@link Rarity#discountedPrice}). Synced because the hat is client-side and
+     *  the trade screen prices its buttons from it; persisted so a stand keeps its merchant on reload. */
+    private static final EntityDataAccessor<String> RARITY =
+            SynchedEntityData.defineId(LuckyMerchant.class, EntityDataSerializers.STRING);
+
     public LuckyMerchant(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
         setPersistenceRequired();
@@ -75,6 +82,7 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
     protected void defineSynchedData() {
         super.defineSynchedData();
         this.entityData.define(EXPLODED, false);
+        this.entityData.define(RARITY, Rarity.COMMON.getSerializedName());
     }
 
     /** Blow him up (ruined-stand state) — cosmetic only; he already refuses all trades once closed. */
@@ -84,6 +92,19 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
 
     public boolean isExploded() {
         return this.entityData.get(EXPLODED);
+    }
+
+    public void setRarity(Rarity rarity) {
+        this.entityData.set(RARITY, rarity.getSerializedName());
+    }
+
+    public Rarity getRarity() {
+        return Rarity.byId(this.entityData.get(RARITY), Rarity.COMMON);
+    }
+
+    /** What this merchant charges for a service, after his rarity's cut. Same answer on both sides. */
+    public int priceOf(int basePrice) {
+        return getRarity().discountedPrice(basePrice);
     }
 
     /** Play the SALE animation once, then fall back to idle (server-side; GeckoLib syncs it to viewers).
@@ -125,7 +146,10 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
 
     @Override
     protected void registerGoals() {
-        goalSelector.addGoal(1, new LookAtPlayerGoal(this, Player.class, 8.0F));
+        // Probability 1.0, not the vanilla 0.02: a shopkeeper should WATCH his customer, not glance
+        // at them 2% of the time while RandomLookAround points him at a wall (user 2026-07-19).
+        // He idle-gazes only when nobody is within range.
+        goalSelector.addGoal(1, new LookAtPlayerGoal(this, Player.class, 8.0F, 1.0F));
         goalSelector.addGoal(2, new RandomLookAroundGoal(this));
     }
 
@@ -183,14 +207,18 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
             BlockPos target = machinePos;
             // The merchant belongs to the stand: once its window closed, he is done trading — and his
             // first customer arms the same countdown the machine does.
+            long closeAtSnapshot = -1L;
             if (level().getBlockEntity(target) instanceof VendingMachineBlockEntity machine) {
                 if (machine.isClosed()) {
-                    serverPlayer.displayClientMessage(Component.literal("This stand has closed for good.")
+                    serverPlayer.displayClientMessage(Component.translatable("luckyxp.msg.stand_closed")
                             .withStyle(net.minecraft.ChatFormatting.RED), true);
                     return InteractionResult.sidedSuccess(level().isClientSide);
                 }
                 machine.startTimerIfNeeded(level());
+                // Snapshot AFTER arming: the first customer's own screen must already show the countdown.
+                closeAtSnapshot = machine.closeAt();
             }
+            final long closeAt = closeAtSnapshot;
             int merchantId = getId();
             NetworkHooks.openScreen(serverPlayer, new MenuProvider() {
                 @Override
@@ -201,11 +229,12 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
                 @Nullable
                 @Override
                 public AbstractContainerMenu createMenu(int id, Inventory inv, Player p) {
-                    return new MerchantMenu(id, inv, target, merchantId);
+                    return new MerchantMenu(id, inv, target, merchantId, closeAt);
                 }
             }, buf -> {
                 buf.writeBlockPos(target);
                 buf.writeVarInt(merchantId);
+                buf.writeLong(closeAt);
             });
         }
         return InteractionResult.sidedSuccess(level().isClientSide);
@@ -216,6 +245,7 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
         super.addAdditionalSaveData(tag);
         tag.putLong("MachinePos", machinePos.asLong());
         tag.putBoolean("Exploded", isExploded());
+        tag.putString("Rarity", getRarity().getSerializedName());
     }
 
     @Override
@@ -223,5 +253,7 @@ public class LuckyMerchant extends PathfinderMob implements GeoEntity {
         super.readAdditionalSaveData(tag);
         machinePos = BlockPos.of(tag.getLong("MachinePos"));
         setExploded(tag.getBoolean("Exploded"));
+        // Merchants saved before rarity existed have no tag: they read back COMMON, i.e. full price.
+        setRarity(Rarity.byId(tag.getString("Rarity"), Rarity.COMMON));
     }
 }

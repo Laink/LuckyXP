@@ -33,8 +33,10 @@ import org.slf4j.Logger;
  * machine (1,3,3) — the template carries a MATERIALS placeholder whose block we swap to the rolled
  * type, keeping its facing/half states; merchant (4,3,3); timer display (5, 5.5, 3).
  *
- * <p>Rolls a rarity (config weights) and a machine type; the rarity lands on both the block entity
- * (stock quality) and the {@code RARITY} block-state property (the external screen model).
+ * <p>Rolls a machine type and TWO independent rarities off the same config weights: the machine's lands on
+ * both the block entity (stock quality) and the {@code RARITY} block-state property (the external screen
+ * model), while the merchant's colours his hat and discounts his six services. A stand therefore tells two
+ * stories, and a plain machine tended by a legendary merchant is its own kind of find.
  */
 public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -138,7 +140,15 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
             be.setRarity(rarity);
         }
 
-        // The merchant, by his counter, looking the same way the machine faces.
+        // The merchant, by his counter, looking the same way the machine faces. His rarity is rolled
+        // SEPARATELY from the machine's, on the same weights: the two tell different stories, and a
+        // legendary merchant on a plain machine is a find in its own right -- his cheap rerolls are exactly
+        // what turns that plain stock around.
+        Rarity merchantRarity = Rarity.roll(level.getRandom(), new int[]{
+                LuckyXpCommonConfig.COMMON.weightCommon.get(),
+                LuckyXpCommonConfig.COMMON.weightRare.get(),
+                LuckyXpCommonConfig.COMMON.weightEpic.get(),
+                LuckyXpCommonConfig.COMMON.weightLegendary.get()});
         com.lwi.luckyxp.entity.LuckyMerchant merchant =
                 Registration.LUCKY_MERCHANT.get().create(level.getLevel());
         if (merchant != null) {
@@ -147,9 +157,11 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
                     ? level.getBlockState(mPos).getValue(VendingMachineBlock.FACING) : Direction.NORTH;
             merchant.moveTo(sPos.getX() + 0.5, sPos.getY(), sPos.getZ() + 0.5, facing.toYRot(), 0.0F);
             merchant.setMachinePos(mPos);
+            merchant.setRarity(merchantRarity);
             level.addFreshEntity(merchant);
         }
-        LOGGER.info("Vending stand placed: {} {} at {} {} {}", rarity, type, surface.getX(), surface.getY(), surface.getZ());
+        LOGGER.info("Vending stand placed: {} machine ({}) + {} merchant at {} {} {}",
+                rarity, type, merchantRarity, surface.getX(), surface.getY(), surface.getZ());
         return true;
     }
 

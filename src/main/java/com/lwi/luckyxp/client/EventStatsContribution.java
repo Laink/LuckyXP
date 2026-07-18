@@ -4,6 +4,7 @@ import com.lwi.luckystats.api.LuckyStatsClientApi;
 import com.lwi.luckystats.client.ScreenSections;
 import com.lwi.luckyxp.LuckyXpMod;
 import com.lwi.luckyxp.xp.LuckBuffs;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -30,30 +31,31 @@ public final class EventStatsContribution {
 
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
-        // Pinnable HUD lines (all unpinned by default -- opt-in from the HUD editor).
-        LuckyStatsClientApi.registerHudStat(K_EVENTS, "Lucky events",
-                data -> "Lucky events: " + data.getInt(K_EVENTS));
-        LuckyStatsClientApi.registerHudStat(K_JACKPOTS, "Event jackpots",
-                data -> "Jackpots: " + data.getInt(K_JACKPOTS));
-        LuckyStatsClientApi.registerHudStat(K_MEGAS, "Event mega jackpots",
-                data -> "Mega jackpots: " + data.getInt(K_MEGAS));
-        LuckyStatsClientApi.registerHudStat(K_BLOCKS, "Event blocks opened",
-                data -> "Event blocks: " + data.getInt(K_BLOCKS));
+        // Pinnable HUD lines (all unpinned by default -- opt-in from the HUD editor). Labels/titles are
+        // lang KEYS (Lucky Stats resolves them at render); formatters resolve their own key per frame.
+        LuckyStatsClientApi.registerHudStat(K_EVENTS, "luckyxp.stat.events_label",
+                data -> I18n.get("luckyxp.hud.events", data.getInt(K_EVENTS)));
+        LuckyStatsClientApi.registerHudStat(K_JACKPOTS, "luckyxp.stat.jackpots_label",
+                data -> I18n.get("luckyxp.hud.jackpots", data.getInt(K_JACKPOTS)));
+        LuckyStatsClientApi.registerHudStat(K_MEGAS, "luckyxp.stat.megas_label",
+                data -> I18n.get("luckyxp.hud.megas", data.getInt(K_MEGAS)));
+        LuckyStatsClientApi.registerHudStat(K_BLOCKS, "luckyxp.stat.blocks_label",
+                data -> I18n.get("luckyxp.hud.blocks", data.getInt(K_BLOCKS)));
 
-        LuckyStatsClientApi.registerScreenSection("Lucky Events", data -> {
+        LuckyStatsClientApi.registerScreenSection("luckyxp.section.events", data -> {
             int events = data.getInt(K_EVENTS);
             int blocks = data.getInt(K_BLOCKS);
             if (events <= 0 && blocks <= 0) {
                 return null; // never saw an event -> hide the whole section
             }
             List<ScreenSections.Row> rows = new ArrayList<>();
-            rows.add(new ScreenSections.Row("Events", String.valueOf(events)));
-            rows.add(new ScreenSections.Row("Event blocks opened", String.valueOf(blocks)));
+            rows.add(new ScreenSections.Row("luckyxp.stat.events_row", String.valueOf(events)));
+            rows.add(new ScreenSections.Row("luckyxp.stat.blocks_row", String.valueOf(blocks)));
             if (data.getInt(K_JACKPOTS) > 0) {
-                rows.add(new ScreenSections.Row("Jackpots", String.valueOf(data.getInt(K_JACKPOTS))));
+                rows.add(new ScreenSections.Row("luckyxp.stat.jackpots_row", String.valueOf(data.getInt(K_JACKPOTS))));
             }
             if (data.getInt(K_MEGAS) > 0) {
-                rows.add(new ScreenSections.Row("Mega jackpots", String.valueOf(data.getInt(K_MEGAS))));
+                rows.add(new ScreenSections.Row("luckyxp.stat.megas_row", String.valueOf(data.getInt(K_MEGAS))));
             }
             return rows;
         });
@@ -61,7 +63,7 @@ public final class EventStatsContribution {
         // The merchant's luck buffs, added to the shared "Luck" section (Lucky Stats merges same-titled
         // sections, so these sit under the same header as Optional Suffering's total/malus rows). Each
         // row shows only when non-zero, and short labels keep them clear of the value column.
-        LuckyStatsClientApi.registerScreenSection("Luck", data -> {
+        LuckyStatsClientApi.registerScreenSection("luckystats.section.luck", data -> {
             int temp = data.getInt(LuckBuffs.STAT_TEMP);
             int perm = data.getInt(LuckBuffs.STAT_PERM);
             if (temp <= 0 && perm <= 0) {
@@ -69,10 +71,10 @@ public final class EventStatsContribution {
             }
             List<ScreenSections.Row> rows = new ArrayList<>();
             if (temp > 0) {
-                rows.add(new ScreenSections.Row("Temporary luck", "+" + temp + "%"));
+                rows.add(new ScreenSections.Row("luckyxp.stat.temp_luck", "+" + temp + "%"));
             }
             if (perm > 0) {
-                rows.add(new ScreenSections.Row("Permanent luck", "+" + perm + "%"));
+                rows.add(new ScreenSections.Row("luckyxp.stat.perm_luck", "+" + perm + "%"));
             }
             return rows;
         });

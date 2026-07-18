@@ -702,7 +702,7 @@ public final class RewardPool {
 
     private static final String[] ALL_LUCKY_TOOLS = {
         "lucky_radar", "lucky_wand", "lucky_shield", "lucky_spawner",
-        "lucky_totem", "lucky_hammer", "lucky_ring", "lucky_belt"
+        "lucky_idol", "lucky_hammer", "lucky_ring", "lucky_belt"
     };
     private static final String[] LEGENDARY_TOOLS = {"lucky_radar", "lucky_hammer", "lucky_ring", "lucky_belt"};
 

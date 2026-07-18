@@ -112,7 +112,7 @@ public class VendingMachineMenu extends AbstractContainerMenu {
                 lvl.getBlockEntity(p) instanceof VendingMachineBlockEntity machine && machine.isClosed(), false);
         if (closedNow) {
             serverPlayer.displayClientMessage(
-                    Component.literal("This stand has closed for good.").withStyle(ChatFormatting.RED), true);
+                    Component.translatable("luckyxp.msg.stand_closed").withStyle(ChatFormatting.RED), true);
             return false;
         }
         Article article = stock.get(buttonId);

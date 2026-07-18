@@ -93,8 +93,12 @@ public final class LuckyEventCommand {
                 .then(Commands.literal("machine")
                         .then(Commands.argument("rarity", StringArgumentType.word()).suggests(RARITIES)
                                 .executes(ctx -> devMachine(ctx.getSource(), StringArgumentType.getString(ctx, "rarity")))))
-                // --- merchant : spawn a service merchant bound to the looked-at machine (test) ---
-                .then(Commands.literal("merchant").executes(ctx -> devMerchant(ctx.getSource())))
+                // --- merchant : spawn a service merchant bound to the looked-at machine (test). Optional
+                // rarity forces his hat + discount; without it he rolls one like a natural merchant. ---
+                .then(Commands.literal("merchant")
+                        .executes(ctx -> devMerchant(ctx.getSource(), null))
+                        .then(Commands.argument("rarity", StringArgumentType.word()).suggests(RARITIES)
+                                .executes(ctx -> devMerchant(ctx.getSource(), StringArgumentType.getString(ctx, "rarity")))))
                 // dev: grant whole Lucky levels (the machine/merchant currency), for economy testing
                 .then(Commands.literal("levels")
                         .then(Commands.argument("amount", IntegerArgumentType.integer(1, 1000))
@@ -208,7 +212,7 @@ public final class LuckyEventCommand {
 
     /** Test helper: spawn a {@link com.lwi.luckyxp.entity.LuckyMerchant} next to the machine the
      *  player is looking at, bound to it (worldgen normally does this at the stand). */
-    private static int devMerchant(CommandSourceStack src) throws CommandSyntaxException {
+    private static int devMerchant(CommandSourceStack src, @Nullable String rarityName) throws CommandSyntaxException {
         ServerPlayer player = src.getPlayerOrException();
         ServerLevel level = player.serverLevel();
         Vec3 eye = player.getEyePosition(1.0F);
@@ -231,12 +235,33 @@ public final class LuckyEventCommand {
             src.sendFailure(Component.literal("Could not create the merchant."));
             return 0;
         }
+        // Rarity: forced when asked (so the hat of each tier can be checked on demand), rolled on the
+        // worldgen weights otherwise -- exactly what a naturally generated merchant gets.
+        Rarity rarity;
+        if (rarityName == null) {
+            rarity = Rarity.roll(level.random, new int[]{
+                    LuckyXpCommonConfig.COMMON.weightCommon.get(),
+                    LuckyXpCommonConfig.COMMON.weightRare.get(),
+                    LuckyXpCommonConfig.COMMON.weightEpic.get(),
+                    LuckyXpCommonConfig.COMMON.weightLegendary.get()});
+        } else {
+            try {
+                rarity = Rarity.valueOf(rarityName.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                src.sendFailure(Component.literal("Unknown rarity: " + rarityName));
+                return 0;
+            }
+        }
         BlockPos at = machinePos.relative(player.getDirection().getClockWise());
         merchant.moveTo(at.getX() + 0.5, at.getY(), at.getZ() + 0.5, player.getYRot() + 180.0F, 0.0F);
         merchant.setMachinePos(machinePos);
+        merchant.setRarity(rarity);
         level.addFreshEntity(merchant);
-        src.sendSuccess(() -> Component.literal("Merchant spawned, bound to the machine.")
-                .withStyle(ChatFormatting.GREEN), false);
+        Rarity shown = rarity;
+        int cut = Math.round(shown.merchantDiscount() * 100.0F);
+        src.sendSuccess(() -> Component.literal("Merchant spawned, bound to the machine: " + shown
+                        + (cut > 0 ? " (-" + cut + "% on every service)" : " (full price)"))
+                .withStyle(shown.color), false);
         return Command.SINGLE_SUCCESS;
     }
 

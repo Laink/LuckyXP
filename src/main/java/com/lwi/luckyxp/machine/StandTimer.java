@@ -52,6 +52,20 @@ public final class StandTimer {
                 SoundEvents.NOTE_BLOCK_BIT.value(), SoundSource.BLOCKS, 0.9F, pitch);
     }
 
+    /**
+     * Boot every player still browsing THIS machine's stock screen. Open menus hold the stock list
+     * by reference, so swapping it (reroll/convert) under them would sell articles from the OLD list
+     * while marking lines of the NEW one as sold. The merchant screen is left alone — it shows
+     * services, not stock. Called by {@link VendingMachineBlockEntity#devReroll}.
+     */
+    static void closeMachineScreens(ServerLevel level, BlockPos machinePos) {
+        for (ServerPlayer sp : level.players()) {
+            if (sp.containerMenu instanceof VendingMachineMenu vm && machinePos.equals(vm.machinePos())) {
+                sp.closeContainer();
+            }
+        }
+    }
+
     /** Boot every player still in THIS stand's machine or merchant screen. */
     private static void closeOpenScreens(ServerLevel level, BlockPos machinePos) {
         for (ServerPlayer sp : level.players()) {

@@ -11,6 +11,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -111,6 +112,11 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
      *  stock roll, so a manually-placed machine (which defaults to COMMON) can be inspected at any
      *  rarity without waiting on worldgen. Pushes the new rarity LED to clients. */
     public void devReroll(Rarity r, Level level) {
+        // Anyone browsing the stock right now is looking at the list about to be replaced — boot them
+        // first, or their menu would sell ghosts (pay for an OLD article, mark a NEW line sold).
+        if (level instanceof ServerLevel server) {
+            StandTimer.closeMachineScreens(server, worldPosition);
+        }
         this.rarity = r;
         this.rolled = false;
         ensureStock(level);

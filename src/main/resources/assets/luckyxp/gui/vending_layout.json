@@ -9,7 +9,7 @@
 
   // ----- PANEL -----
   "panel_w": 250,                 // total panel width
-  "panel_h": 171,                 // total height
+  "panel_h": 169,                 // total height (designer 2026-07-18: -2px from the bottom, footer mirrors the header: 5/7/5/2)
   "border": 2,                    // green border thickness
 
   // ----- HEADER -----
@@ -29,10 +29,10 @@
 
   // ----- FOOTER -----
   "footer_divider_y": 149,        // Y of the divider line above the footer
-  "footer_y": 156,                // Y of the "LUCKY LVL" text + level
+  "footer_y": 155,                // Y of the "LUCKY LVL" text + level (designer 2026-07-18: 1px up)
 
   // ----- SCROLLBAR -----
-  "scrollbar_w": 6,               // scrollbar width
+  "scrollbar_w": 5,               // scrollbar width (designer 2026-07-18: -1px from the RIGHT, left anchor fixed)
   "scrollbar_right_margin": 13,   // distance between the scrollbar and the right edge
   "scrollbar_top": 25,            // Y of the top of the scrollbar
   "scrollbar_height": 119,        // rail length
@@ -55,11 +55,19 @@
   "c_sb_track": "FF0C2A18",       // scrollbar rail
   "c_sb_thumb": "FF2BBF5A",       // scrollbar thumb
 
+  // ----- LUCKY XP COLORS (designer 2026-07-18, matching the lucky-XP orb blue) -----
+  "c_cost": "FF87ECFF",           // price number (affordable) — lucky-XP blue
+  "c_cost_lock": "FF3784A8",      // price number when the buyer can't afford it
+  "c_cost_outline": "FF03130B",   // price number outline
+  "c_name_lock": "FF459A58",      // item name when the buyer can't afford it
+  "c_lvl": "FF87ECFF",            // "LUCKY LVL N" footer text
+  "c_timer": "FFD4F3DB",          // stand countdown (header, right)
+
   // ----- RARITY BADGE (footer, right side) -----
-  "rarity_text_x": 230,           // RIGHT edge of the text (right-aligned -> handles variable length)
-  "rarity_text_y": 156,           // Y of the rarity text
-  "rarity_pill_x": 238,           // X of the center of the blinking pill
-  "rarity_pill_y": 159,           // Y of the center of the pill
+  "rarity_text_x": 233,           // RIGHT edge of the text (designer 2026-07-18: +3px, aligns with the costs above)
+  "rarity_text_y": 155,           // Y of the rarity text (designer 2026-07-18: 1px up)
+  "rarity_pill_x": 239,           // X of the center of the blinking pill (designer 2026-07-18: +1px)
+  "rarity_pill_y": 158,           // Y of the center of the pill (follows the text, 1px up)
   "rarity_pill_radius": 3,        // pill radius
   "rarity_pill_speed": 0.22       // blink speed
 }

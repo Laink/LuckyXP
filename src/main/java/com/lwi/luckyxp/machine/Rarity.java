@@ -4,8 +4,12 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.util.RandomSource;
 import net.minecraft.util.StringRepresentable;
 
-/** Vending-machine rarity tiers. Weight = spawn chance; color drives the GUI title (also labelled by name).
- *  Also a block-state property ({@code rarity}) so the machine's external screen model varies by tier. */
+/** Stand rarity tiers. Weight = spawn chance; color drives the GUI title (also labelled by name).
+ *  Also a block-state property ({@code rarity}) so the machine's external screen model varies by tier.
+ *
+ *  <p>A stand rolls this TWICE, independently: once for the machine (stock quality + screen) and once for
+ *  its merchant (price discount + hat colour). So a plain machine can be tended by a legendary merchant,
+ *  whose cheap rerolls are exactly what turns that plain stock around. */
 public enum Rarity implements StringRepresentable {
     COMMON("common", ChatFormatting.GREEN, 59),
     RARE("rare", ChatFormatting.BLUE, 30),
@@ -41,6 +45,38 @@ public enum Rarity implements StringRepresentable {
             case EPIC -> 0xC264FF;       // purple
             case LEGENDARY -> 0xFFE21C;  // bright yellow-gold (vivid)
         };
+    }
+
+    /**
+     * The cut a merchant of this rarity takes off every one of his prices. His hat IS the discount: the
+     * whole point of finding a gold-hatted merchant is that he sells the same six services for far less.
+     */
+    public float merchantDiscount() {
+        return switch (this) {
+            case COMMON -> 0.0F;
+            case RARE -> 0.10F;
+            case EPIC -> 0.30F;
+            case LEGENDARY -> 0.60F;
+        };
+    }
+
+    /**
+     * A base price, cut by this rarity. Rounds DOWN so the discount is always real money: these prices are
+     * small, and rounding to nearest would quietly eat a -10% on the cheap services (5 x 0.9 = 4.5 -> 5,
+     * i.e. no discount at all). Never below 1 -- a service is never free.
+     */
+    public int discountedPrice(int base) {
+        return Math.max(1, (int) Math.floor(base * (1.0F - merchantDiscount())));
+    }
+
+    /** Look a rarity up by its serialized id, falling back rather than throwing on unknown save data. */
+    public static Rarity byId(String id, Rarity fallback) {
+        for (Rarity r : values()) {
+            if (r.id.equalsIgnoreCase(id)) {
+                return r;
+            }
+        }
+        return fallback;
     }
 
     /** Roll a rarity by the enum's DEFAULT weights (worldgen passes the config weights instead). */
