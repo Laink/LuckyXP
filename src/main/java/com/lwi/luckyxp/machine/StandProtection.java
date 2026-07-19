@@ -84,9 +84,17 @@ public final class StandProtection {
         @SubscribeEvent
         public static void onBreak(BlockEvent.BreakEvent event) {
             Player p = event.getPlayer();
-            if ((p == null || !p.isCreative()) && isProtected(event.getLevel(), event.getPos())) {
-                event.setCanceled(true);
+            if ((p != null && p.isCreative()) || !isProtected(event.getLevel(), event.getPos())) {
+                return;
             }
+            // A lucky block standing inside the box is LOOT, not structure: worldgen or a Lucky Event
+            // can drop one in there, and it has nothing to do with the stall the protection guards.
+            // Protecting it made it permanently unbreakable — and, since the break bus pays Lucky XP
+            // before this cancel lands, let a player farm XP off it forever (2026-07-19). Let it break.
+            if (com.lwi.luckytweaks.api.LuckyTweaksApi.isLuckyBlock(event.getState())) {
+                return;
+            }
+            event.setCanceled(true);
         }
 
         /** Creeper / TNT / any blast: strip every stand block out of the affected list, so the
