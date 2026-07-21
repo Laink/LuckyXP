@@ -150,7 +150,14 @@ public class MerchantMenu extends AbstractContainerMenu {
                 if (!(level.getBlockEntity(machinePos) instanceof VendingMachineBlockEntity be)) {
                     return fail(sp, Component.translatable("luckyxp.merchant.msg.no_machine_convert"));
                 }
-                MachineType next = MachineType.values()[(be.getMachineType().ordinal() + 1) % MachineType.values().length];
+                // A RANDOM other type, never the one it already is (user 2026-07-21). It used to step
+                // through the enum in order, which a player spotted as a fixed Consumables -> Lucky
+                // Blocks -> Materials -> Tools loop and reported as a bug. Rolling +1..+3 keeps the
+                // "never the same type" guarantee — paying 15 levels for no change would be a robbery —
+                // while making the outcome a surprise, which is what this pack is about.
+                MachineType[] types = MachineType.values();
+                MachineType next = types[(be.getMachineType().ordinal() + 1 + level.random.nextInt(types.length - 1))
+                        % types.length];
                 Rarity rarity = be.getRarity();
                 long closeAt = be.closeAt();            // the stand's window survives the block swap
                 boolean wasClosed = be.isClosed();
