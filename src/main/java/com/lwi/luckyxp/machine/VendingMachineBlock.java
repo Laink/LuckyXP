@@ -185,6 +185,7 @@ public class VendingMachineBlock extends BaseEntityBlock {
         }
         return (lvl, pos, st, be) -> {
             if (be instanceof VendingMachineBlockEntity machine && lvl instanceof net.minecraft.server.level.ServerLevel server) {
+                machine.tickTypeCheck(server);              // once per load: repair a 1.3.0 stale-type stock
                 StandTimer.tick(server, pos, machine);
                 machine.tickTray(server);                   // close the sale-tray after its brief window
             }

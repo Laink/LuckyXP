@@ -30,7 +30,7 @@ import org.slf4j.Logger;
  * the structure's lower corner sits 3 blocks below the surface.
  *
  * <p>Designer's reference points, measured from the structure's lower corner (0,0,0):
- * machine (1,3,3) — the template carries a MATERIALS placeholder whose block we swap to the rolled
+ * machine (1,3,3) — the template carries a TOOLS placeholder whose block we swap to the rolled
  * type, keeping its facing/half states; merchant (4,3,3); timer display (5, 5.5, 3).
  *
  * <p>Rolls a machine type and TWO independent rarities off the same config weights: the machine's lands on
@@ -137,6 +137,13 @@ public class VendingStandFeature extends Feature<NoneFeatureConfiguration> {
                     .setValue(VendingMachineBlock.HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER), flags);
         }
         if (level.getBlockEntity(mPos) instanceof VendingMachineBlockEntity be) {
+            // Worldgen writes into a ProtoChunk, and ProtoChunk.setBlockState does NOT destroy the
+            // block entity the template's TOOLS placeholder spawned (only live chunks do, through
+            // onRemove) — so `be` here is the PLACEHOLDER's entity, its cached blockstate still says
+            // TOOLS, and getMachineType() reads that cache. Left alone, every naturally generated
+            // machine rolled a TOOLS stock on first click, whatever its block (community report,
+            // 2026-07-21). Point the cache at the swapped block before anything reads the type.
+            be.setBlockState(level.getBlockState(mPos));
             be.setRarity(rarity);
         }
 

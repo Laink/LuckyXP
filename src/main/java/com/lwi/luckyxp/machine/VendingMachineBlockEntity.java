@@ -29,8 +29,17 @@ import java.util.List;
 /** Holds the machine's rolled stock (fixed once, persisted) + its rarity (stock quality, set by the
  *  stand at worldgen). The {@link MachineType} comes from the block. Opens the trade menu. */
 public class VendingMachineBlockEntity extends BlockEntity implements MenuProvider {
+    private static final org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
     private List<Article> stock = new ArrayList<>();
     private boolean rolled = false;
+    /** The type the stock was actually rolled from, persisted from 1.0.1 on. Nothing acts on it yet:
+     *  it is a diagnostic (a stock that disagrees with its block is a bug like the 1.3.0 one) and
+     *  leaves the door open to a future repair pass that could tell a victim from a legitimately
+     *  converted machine — which a 1.3.0 save cannot. {@code null} until the first roll. */
+    private MachineType rolledType = null;
+    /** Whether {@link #checkTypeIntegrity} has run (first server tick). Deliberately NOT persisted:
+     *  it costs one blockstate read per machine per load, and it is what repairs 1.3.0 worlds. */
+    private transient boolean typeChecked = false;
     private Rarity rarity = Rarity.COMMON;
     /** The stand's one-time open window: game time at which it closes for good, or -1 = not started. */
     private long closeAt = -1;
@@ -93,9 +102,37 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
      */
     public void ensureStock(Level level) {
         if (!rolled) {
-            stock = RewardPool.roll(getMachineType(), rarity, level.random);
+            rolledType = getMachineType();
+            stock = RewardPool.roll(rolledType, rarity, level.random);
             rolled = true;
             setChanged();
+        }
+    }
+
+    /**
+     * Runs once, on the machine's first server tick — NOT in {@link #onLoad}, which fires while the
+     * chunk is still being built (reading a blockstate back out of the level there risks a reentrant
+     * chunk load). By the first tick the chunk is live and both reads below are safe.
+     *
+     * <p>Refreshes the cached blockstate: a block entity that survived the worldgen ProtoChunk swap
+     * still caches the template's TOOLS placeholder, and {@link #getMachineType} reads that cache.
+     * Doing this BEFORE the stock is ever rolled is what fixes 1.3.0 worlds — every machine not yet
+     * opened starts rolling its real type again.
+     *
+     * <p>Deliberately does NOT re-roll a stock that was already frozen on the wrong type (decision
+     * user 2026-07-21, reversing the earlier call): the repair would run on every machine of every
+     * world to fix a minority of them, and a 1.3.0 stock carries no RolledType tag, so telling a
+     * bug victim from a legitimately-converted machine is guesswork — it would re-roll machines the
+     * player PAID the merchant to convert. Those few frozen stocks stay fixable in-game with the
+     * merchant's 10-XP reroll. Worlds are recreated often in this pack; the risk isn't worth it.
+     */
+    private void checkTypeIntegrity(ServerLevel level) {
+        typeChecked = true;
+        BlockState actual = level.getBlockState(worldPosition);
+        if (actual.getBlock() instanceof VendingMachineBlock && actual != getBlockState()) {
+            LOGGER.debug("Vending machine at {} had a stale {} blockstate cache - refreshed to {}",
+                    worldPosition, getBlockState().getBlock(), actual.getBlock());
+            setBlockState(actual);
         }
     }
 
@@ -186,6 +223,13 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         setChanged();
     }
 
+    /** First-tick hook for {@link #checkTypeIntegrity} (see the ticker in {@code VendingMachineBlock}). */
+    public void tickTypeCheck(ServerLevel level) {
+        if (!typeChecked) {
+            checkTypeIntegrity(level);
+        }
+    }
+
     /** Ticked once a tick: shut the tray once its window elapses. */
     public void tickTray(net.minecraft.server.level.ServerLevel level) {
         if (trayCloseAt >= 0 && level.getGameTime() >= trayCloseAt) {
@@ -271,6 +315,9 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
         }
         tag.put("Stock", list);
         tag.putBoolean("Rolled", rolled);
+        if (rolledType != null) {
+            tag.putString("RolledType", rolledType.name());
+        }
         tag.putString("Rarity", rarity.name());
         tag.putLong("CloseAt", closeAt);
         tag.putBoolean("Closed", closed);
@@ -281,6 +328,9 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
     public void load(CompoundTag tag) {
         super.load(tag);
         rolled = tag.getBoolean("Rolled");
+        // Absent on stocks rolled by the 1.3.0 jar; left null rather than guessed (nothing acts on
+        // it today, and a wrong guess would be worse than no answer — see checkTypeIntegrity).
+        rolledType = tag.contains("RolledType") ? parseMachineType(tag.getString("RolledType")) : null;
         rarity = parseRarity(tag.getString("Rarity"));
         closeAt = tag.contains("CloseAt") ? tag.getLong("CloseAt") : -1;
         closed = tag.getBoolean("Closed");
@@ -331,6 +381,15 @@ public class VendingMachineBlockEntity extends BlockEntity implements MenuProvid
             BlockState us = level.getBlockState(up);
             level.sendBlockUpdated(up, us, us, 8);
         }
+    }
+
+    private static MachineType parseMachineType(String name) {
+        for (MachineType t : MachineType.values()) {
+            if (t.name().equals(name)) {
+                return t;
+            }
+        }
+        return MachineType.TOOLS;
     }
 
     private static Rarity parseRarity(String name) {

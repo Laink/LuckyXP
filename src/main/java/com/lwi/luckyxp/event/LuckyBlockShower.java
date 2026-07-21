@@ -16,6 +16,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
@@ -35,6 +36,7 @@ import java.util.Map;
  * side-effect (only the player breaking it removes it). Blocks are spaced apart to reduce collisions.
  */
 public final class LuckyBlockShower {
+    private static final org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
     private static final int STAGGER = 6;            // ticks between each block popping in
     private static final int RADIUS = 7;             // horizontal spread around the player
     private static final int MIN_SPACING = 4;        // min blocks between two event blocks of the same shower
@@ -82,6 +84,7 @@ public final class LuckyBlockShower {
                 if (pos == null) {
                     continue;
                 }
+
                 ResourceLocation pick = block != null ? block
                         : (pool.isEmpty() ? null : pool.get(rng.nextInt(pool.size())));
                 if (pick == null) {
@@ -98,6 +101,15 @@ public final class LuckyBlockShower {
                 chosen.add(pos);
                 PENDING.add(new Pending(dim, pos, pick, lr, isXp ? xpMult : 0.0F,
                         mega, block == null, chosen.size() - 1, now + (long) chosen.size() * STAGGER));
+            }
+            // A shower that places nothing used to be indistinguishable from one that never fired: the
+            // stats counters still ticked and the player just saw an event that gave him nothing. Say so.
+            if (chosen.isEmpty()) {
+                LOGGER.warn("Shower for {} at {} in {} placed NO block: no spot found in {} attempts",
+                        player.getGameProfile().getName(), player.blockPosition(), dim, perPlayer);
+            } else if (chosen.size() < perPlayer) {
+                LOGGER.info("Shower for {} placed {}/{} blocks (crowded spot)",
+                        player.getGameProfile().getName(), chosen.size(), perPlayer);
             }
         }
     }
@@ -234,8 +246,21 @@ public final class LuckyBlockShower {
         }
     }
 
+    /**
+     * Dry land first, water only as a fallback. Standing in open water used to kill a shower outright
+     * (community report, 2026-07-21): every candidate cell was {@code minecraft:water}, so the air test
+     * below failed 28 times over and the event silently placed nothing. Running the strict pass first
+     * keeps placement on shore exactly as it was — water is used only when there was no dry spot at all.
+     */
     @Nullable
     private static BlockPos findSpot(ServerLevel level, BlockPos around, RandomSource rng, List<BlockPos> avoid) {
+        BlockPos dry = findSpot(level, around, rng, avoid, false);
+        return dry != null ? dry : findSpot(level, around, rng, avoid, true);
+    }
+
+    @Nullable
+    private static BlockPos findSpot(ServerLevel level, BlockPos around, RandomSource rng, List<BlockPos> avoid,
+                                     boolean allowWater) {
         for (int attempt = 0; attempt < 28; attempt++) {
             int r = RADIUS + attempt / 4;          // widen the search as attempts fail (caves, towers, open air)
             int dx = rng.nextInt(r * 2 + 1) - r;
@@ -258,9 +283,21 @@ public final class LuckyBlockShower {
                         && level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)) {
                     return pos;
                 }
+                // Fallback pass: a water cell takes the block as-is, with NO support test — mid-ocean
+                // there is no solid face for six blocks down, and a swimming player reaches a floating
+                // block just fine. Water only: lava would burn the drops the block is there to give.
+                if (allowWater && isOpenWater(level, pos)) {
+                    return pos;
+                }
             }
         }
         return null;
+    }
+
+    /** A cell filled with water and free to be built into — excludes waterlogged stairs, kelp, etc. */
+    private static boolean isOpenWater(ServerLevel level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        return state.getFluidState().getType() == Fluids.WATER && state.canBeReplaced();
     }
 
     private static boolean tooClose(int x, int z, List<BlockPos> avoid) {
