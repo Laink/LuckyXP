@@ -2,7 +2,7 @@
 
 Adds a Lucky XP economy: break lucky blocks to earn blue Lucky XP and levels, then spend levels at rarity-tiered vending machines for rewards. Built on the Lucky Block mod; requires Lucky Tweaks.
 
-Minecraft 1.20.1, Forge. Written for the [Lucky World Invasion Reloaded](https://github.com/Laink/LuckyWorldInvasionReloaded) modpack, but it runs on its own.
+Minecraft 1.20.1, Forge. Written for the [Lucky World Invasion Reloaded](https://github.com/LuckyWorldInvasionReloaded/Modpack) modpack, but it runs on its own.
 
 ## Building
 
