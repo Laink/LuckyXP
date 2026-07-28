@@ -110,7 +110,7 @@ public final class LuckyEventCommand {
                                 .executes(ctx -> devStand(ctx.getSource(), StringArgumentType.getString(ctx, "rarity")))))
                 .then(outcomeArgs(Commands.literal("start"), false))     // real event (shower + End/dragon gate)
                 .then(outcomeArgs(Commands.literal("preview"), true))    // roulette only, no effect, no gate
-                // --- shower : test direct de l'apparition (saute la roulette) ---
+                // --- shower: spawn it directly, skipping the roulette (test) ---
                 .then(Commands.literal("shower")
                         .then(Commands.literal("luck")
                                 .then(Commands.literal("all")

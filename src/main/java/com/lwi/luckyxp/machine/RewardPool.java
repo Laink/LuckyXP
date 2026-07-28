@@ -451,7 +451,7 @@ public final class RewardPool {
         }
         // lucky-mod blocks only: a cross-mod lucky-like (the Fuze blockling) cannot be infused
         // through the normal infusion recipes, so a machine-exclusive infusion would be an
-        // anomaly (user 2026-07-04 - "si on ne peut pas l'infuser naturellement, pas de machine").
+        // anomaly (user 2026-07-04: if it cannot be infused naturally, it gets no machine).
         List<ResourceLocation> pool = new ArrayList<>(LuckyTweaksApi.getLuckyBlockIds());
         pool.removeIf(id -> !"lucky".equals(id.getNamespace()));
         shuffle(pool, rng);
@@ -533,7 +533,7 @@ public final class RewardPool {
      * machine is just harder to find — so good goods appear early and higher-rarity machines give MORE
      * of them at a FLAT per-line price (a legendary sells 5–6 krampus for the same price a rare sells
      * 1–2). Each line's quantity is rolled inside its per-rarity band at generation and then frozen, so
-     * two same-rarity machines differ ("une même ligne peut être bof ou bien"). Infusion mats are sold
+     * two same-rarity machines differ (the same line can come out mediocre or good). Infusion mats are sold
      * raw (no NBT — the player infuses the block of their choice); prices are flat starting values, easy
      * to tune. A line whose item is absent (e.g. BiC/Yakurum not installed) is filtered out first, so
      * the 7–10 shown are always real items.
@@ -589,8 +589,8 @@ public final class RewardPool {
         // every rarity, aligned with the Consumables machine (user 2026-07-09)
         new Line("minecraft:enchanted_golden_apple",   new int[]{11, 13, 14, 13}, new int[][]{ {1, 1},   {2, 3},   {4, 5},   {7, 8}  }),
         // --- Yakurum infusion (Water LB) ---
-        // COMMON quantities halved (2026-07-09, "une machine common n'est pas censée récompenser
-        // beaucoup") — pearl and aquamarine aligned on the same infusion yield (~4.4 pts/level).
+        // COMMON quantities halved (2026-07-09: a common machine is not meant to reward much)
+        // -- pearl and aquamarine aligned on the same infusion yield (~4.4 pts/level).
         new Line("yakurum:pearl",                      new int[]{11,  0,  0,  0}, new int[][]{ {6, 10},  null,     null,     null    }),
         new Line("yakurum:aquamarine",                 new int[]{11, 14,  0,  0}, new int[][]{ {5, 7},   {10, 16}, null,     null    }),
         new Line("yakurum:pearl_block",                new int[]{11,  0,  0,  0}, new int[][]{ {1, 1},   null,     null,     null    }),
