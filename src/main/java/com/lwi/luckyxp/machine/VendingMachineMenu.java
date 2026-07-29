@@ -2,6 +2,7 @@ package com.lwi.luckyxp.machine;
 
 import com.lwi.luckyxp.Registration;
 import com.lwi.luckyxp.api.LuckyXpApi;
+import com.lwi.luckyxp.net.LuckyXpNetwork;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -117,6 +118,15 @@ public class VendingMachineMenu extends AbstractContainerMenu {
         }
         Article article = stock.get(buttonId);
         if (article.stack().isEmpty() || article.sold()) {      // every line is a single purchase
+            // Someone else bought it while this menu was open. The client already played its optimistic
+            // purchase feedback, so say it plainly and resync the line, or the buyer thinks he paid.
+            if (article.sold()) {
+                serverPlayer.displayClientMessage(
+                        Component.translatable("luckyxp.msg.already_sold").withStyle(ChatFormatting.RED), true);
+                if (machinePos != null && serverPlayer.getServer() != null) {
+                    LuckyXpNetwork.broadcastMachineSold(serverPlayer.getServer(), machinePos, buttonId);
+                }
+            }
             return false;
         }
         // Creative buys for free (the vanilla-anvil convention) — for testing and map-making.
@@ -143,6 +153,9 @@ public class VendingMachineMenu extends AbstractContainerMenu {
                 be.markSold(buttonId);
                 if (level instanceof ServerLevel server) {
                     be.openTray(server);
+                    // Push the SOLD line to everyone else shopping here, so nobody is left clicking an
+                    // article that no longer exists.
+                    LuckyXpNetwork.broadcastMachineSold(server.getServer(), pos, buttonId);
                 }
             }
         });

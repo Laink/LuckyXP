@@ -41,6 +41,26 @@ public final class LuckyXpNetwork {
                 .encoder(DebugBlocksPacket::encode)
                 .consumerMainThread(DebugBlocksPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(SyncMachineSoldPacket.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(SyncMachineSoldPacket::decode)
+                .encoder(SyncMachineSoldPacket::encode)
+                .consumerMainThread(SyncMachineSoldPacket::handle)
+                .add();
+    }
+
+    /**
+     * Tell every shopper standing in the same machine's menu that a line just sold, so their screen
+     * stops offering it. Without this, a second buyer sees the article as available, clicks, and gets
+     * the full purchase feedback for a sale the server refuses (single-purchase lines).
+     */
+    public static void broadcastMachineSold(MinecraftServer server, net.minecraft.core.BlockPos pos, int index) {
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            if (p.connection != null
+                    && p.containerMenu instanceof com.lwi.luckyxp.machine.VendingMachineMenu m
+                    && pos.equals(m.machinePos())) {
+                CHANNEL.send(PacketDistributor.PLAYER.with(() -> p), new SyncMachineSoldPacket(index));
+            }
+        }
     }
 
     /** Send a debug player the nearby event blocks to draw "Luck +X" holograms over (empty list = clear). */

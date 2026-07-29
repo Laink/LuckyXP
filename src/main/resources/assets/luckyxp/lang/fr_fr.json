@@ -33,6 +33,7 @@
   "luckyxp.rarity.epic": "ÉPIQUE",
   "luckyxp.rarity.legendary": "LÉGENDAIRE",
 
+  "luckyxp.msg.already_sold": "Quelqu'un vient d'acheter celui-là.",
   "luckyxp.msg.stand_closed": "Ce stand a fermé pour de bon.",
   "luckyxp.merchant.msg.not_enough_levels": "Pas assez de niveaux (%s requis).",
   "luckyxp.merchant.msg.no_machine_reroll": "Aucune machine à relancer !",
