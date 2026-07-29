@@ -144,6 +144,8 @@ public final class Registration {
             LuckyTweaksApi.registerBreakListener(BreakXp::onBroken);
             // ...topped up on the same tick when the drop it rolled turns out to be legendary.
             LuckyTweaksApi.registerLegendaryDropListener(BreakXp::onLegendaryDrop);
+            // ...and taken away when the player falls (all of it on a death, a share when downed).
+            com.lwi.luckyxp.xp.DeathXpLoss.register();
         });
     }
 }

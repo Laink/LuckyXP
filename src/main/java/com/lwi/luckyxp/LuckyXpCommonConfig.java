@@ -48,6 +48,9 @@ public final class LuckyXpCommonConfig {
         public final ForgeConfigSpec.IntValue legendaryMultiplier;
         public final ForgeConfigSpec.IntValue legendaryXpDelayTicks;
 
+        public final ForgeConfigSpec.BooleanValue loseXpOnDeath;
+        public final ForgeConfigSpec.IntValue downedLossPercent;
+
         Common(ForgeConfigSpec.Builder b) {
             b.comment("Daily automatic Lucky events (the case-opening roulette that makes lucky blocks appear).")
                     .push("events");
@@ -144,6 +147,17 @@ public final class LuckyXpCommonConfig {
                             "exact moment makes the doubling visible: a second clump of orbs bursts with the reward.",
                             "0 = pay immediately, together with the break's own XP.")
                     .defineInRange("legendaryXpDelayTicks", 44, 0, 200);
+            loseXpOnDeath = b.comment(
+                            "Falling costs your Lucky XP, and NOTHING drops: unlike vanilla experience there are no",
+                            "orbs to race back for -- the XP is simply gone. A real death takes all of it; being",
+                            "knocked down in multiplayer takes the share below.")
+                    .define("loseXpOnDeath", true);
+            downedLossPercent = b.comment(
+                            "Share of your Lucky XP destroyed when you are knocked down in multiplayer, as a percent.",
+                            "Being revived already costs the team a life; half your balance makes going down cost YOU",
+                            "something real too, without being the clean sweep a death is.",
+                            "0 disables the downed penalty and leaves only the death one.")
+                    .defineInRange("downedLossPercent", 50, 0, 100);
             b.pop();
         }
     }

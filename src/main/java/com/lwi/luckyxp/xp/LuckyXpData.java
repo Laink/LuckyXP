@@ -97,6 +97,44 @@ public final class LuckyXpData {
         return true;
     }
 
+    /** The player's spendable Lucky XP expressed in points: every full level plus the current progress. */
+    public static int points(Player player) {
+        CompoundTag tag = root(player);
+        int level = Math.max(0, tag.getInt(K_LEVEL));
+        int points = Math.max(0, tag.getInt(K_INTO));
+        for (int l = 0; l < level; l++) {
+            points += xpToNext(l);
+        }
+        return points;
+    }
+
+    /** Rebuild level + progress from a point total. The lifetime {@code total} is left alone: it records
+     *  what was ever earned, and a death does not un-earn it. */
+    public static void setPoints(Player player, int points) {
+        CompoundTag tag = root(player);
+        int level = 0;
+        int left = Math.max(0, points);
+        int need = xpToNext(level);
+        while (left >= need) {
+            left -= need;
+            level++;
+            need = xpToNext(level);
+        }
+        tag.putInt(K_LEVEL, level);
+        tag.putInt(K_INTO, left);
+    }
+
+    /** Take {@code points} away (clamped at zero) and return how much was actually removed. */
+    public static int removePoints(Player player, int points) {
+        if (points <= 0) {
+            return 0;
+        }
+        int had = points(player);
+        int taken = Math.min(had, points);
+        setPoints(player, had - taken);
+        return taken;
+    }
+
     /** Copy the Lucky XP compound across a death/dimension Clone so progress is never lost. */
     public static void copyAcrossClone(Player from, Player to) {
         CompoundTag src = from.getPersistentData().getCompound(ROOT);
