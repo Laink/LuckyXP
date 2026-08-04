@@ -80,6 +80,7 @@ dependencies {
     // through the mod's own difficulty data + sync so its bottom-right readout actually moves. Soft
     // dependency -- every reference lives in ImprovedMobsDifficulty, behind a ModList check.
     compileOnly files("libs/improvedmobs-1.20.1-1.13.7-forge.jar")
+    compileOnly files("libs/immersivehotbar-1.1.2-forge-1.20.1.jar")
     // GeckoLib animation library (the animated Lucky Merchant), same version the modpack ships.
     implementation "software.bernie.geckolib:geckolib-forge-1.20.1:4.7.3"
 }
