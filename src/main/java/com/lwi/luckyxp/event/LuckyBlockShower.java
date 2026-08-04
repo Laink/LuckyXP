@@ -142,12 +142,29 @@ public final class LuckyBlockShower {
         PENDING.clear();
     }
 
-    /** Re-place any tracked event block that's been overwritten (structure/explosion) — makes them untouchable. */
+    /**
+     * Re-place any tracked event block that another drop's structure OVERWROTE, and forget the ones that
+     * were simply broken.
+     *
+     * <p><b>Gone is not the same as overwritten.</b> This used to re-place anything that was no longer
+     * the tracked block, full stop, and only a break routed through {@code BlockEvent.BreakEvent}
+     * cleared the entry. Forge only fires that event for a player breaking a block by hand, so a hammer,
+     * a piston, an explosion, a vein-miner or an enderman left the entry standing and the block came
+     * back every 5 ticks -- with the player keeping what they picked up each time. An infinite dupe,
+     * not a cosmetic bug.
+     *
+     * <p>The tell is AIR, and only air: removing a block leaves nothing behind, while a structure
+     * writing over it leaves something -- and not necessarily a solid something, since it may well bury
+     * the spot under water or grass. So air = someone took it, which is their right, drop the entry;
+     * anything else = built over, put ours back. Forgetting also stops us fighting a player who later
+     * builds on the spot.
+     */
     private static void protect(ServerLevel level) {
         EventBlockData data = EventBlockData.get(level);
         if (data.isEmpty()) {
             return;
         }
+        List<BlockPos> broken = null;
         for (Map.Entry<Long, EventBlockData.Entry> me : data.view().entrySet()) {
             EventBlockData.Entry e = me.getValue();
             Block b = ForgeRegistries.BLOCKS.getValue(e.block);
@@ -155,11 +172,26 @@ public final class LuckyBlockShower {
                 continue;
             }
             BlockPos pos = BlockPos.of(me.getKey());
-            if (!level.getBlockState(pos).is(b)) {
-                level.setBlock(pos, b.defaultBlockState(), 3);
-                if (e.luckRaw != 0) {
-                    setLuck(level, pos, e.luckRaw);
+            BlockState state = level.getBlockState(pos);
+            if (state.is(b)) {
+                continue;                                  // still standing
+            }
+            if (state.isAir()) {
+                if (broken == null) {
+                    broken = new ArrayList<>();
                 }
+                broken.add(pos);                           // removed: let it go
+                continue;
+            }
+            level.setBlock(pos, b.defaultBlockState(), 3); // built over: dig it back out
+            if (e.luckRaw != 0) {
+                setLuck(level, pos, e.luckRaw);
+            }
+        }
+        // Deferred: view() is the live map, and forgetting inside the loop would break the iterator.
+        if (broken != null) {
+            for (BlockPos pos : broken) {
+                data.consume(pos);
             }
         }
     }
